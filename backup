@@ -1,0 +1,166 @@
+#! /bin/bash
+
+COMMAND=$1
+
+CONF_FILE=backup.conf
+PROJECT_ID_KEY=".backup.google.project-id"
+JSON_CREDENTIALS_KEY=".backup.google.credentials"
+ACCESS_TOKEN_KEY=".backup.google.access-token"
+INCLUDES_KEY=".backup.includes[]"
+EXCLUDES_KEY=".backup.excludes[]"
+
+IFS=';'
+
+function _get_input {
+	input="$1"
+	expression="$2"
+	optional=$3
+	silent=$4
+	readline=$5
+	
+	flags=()
+	if $silent ; then
+		flags+=("-s")
+	fi
+	if $readline ; then
+		flags+=("-e")
+	fi
+	
+	result="$(yq e "$expression" $CONF_FILE)"
+	if ! $optional && [ -z "$result" ]; then
+		read -p "Please enter your $input: " ${flags[@]} result
+	fi
+	
+	echo "$result"
+}
+
+function _load_credentials {
+	credentials="$(yq e "$JSON_CREDENTIALS_KEY" $CONF_FILE)"
+	if [[ -z "$credentials" || ! -f "$credentials" ]]; then
+		if [ -z "$credentials" ]; then
+			echo "backup: No credentials provided."
+		else
+			echo "backup: Credentials file $credentials does not exist."
+		fi
+		read -p "Do you have a JSON Credentials file? (Y/n) " has_credentials
+		if [[ $has_credentials =~ ^[Yy] ]]; then
+			export GOOGLE_APPLICATION_CREDENTIALS="$(_get_input "Google Credentials File (json)" "$JSON_CREDENTIALS_KEY" false false true)"
+			until [ -f "`eval echo ${GOOGLE_APPLICATION_CREDENTIALS//>}`" ]; do
+				echo "$GOOGLE_APPLICATION_CREDENTIALS does not exist. Verify that the provided path is correct and try again."
+				export GOOGLE_APPLICATION_CREDENTIALS="$(_get_input "Google Credentials File (json)" "$JSON_CREDENTIALS_KEY" false false true)"
+			done
+		fi
+		
+		if [[ ! $has_credentials =~ ^[Yy] ]]; then
+			echo "backup: Credentials file does not exist. Need access token."
+			export GOOGLE_ACCESS_TOKEN="$(_get_input "Google Access Token" "$ACCESS_TOKEN_KEY" false true false)"
+		fi
+	fi
+}
+
+function _load_inclusions {
+	export BACKUP_INCLUDES="$(_get_input "included files" "$INCLUDES_KEY" true false false)"
+	if [ -z "$BACKUP_INCLUDES" ]; then
+		echo "backup: No includes provided."
+		echo -e "\n\e[33mWARNING: If no includes are provided, then ' / ' will be backed up.\e[0m\n"
+		read -p "Do you want to provide file and/or directory inclusions? (Y/n) " want_includes
+		if [[ $want_includes =~ ^[Yy] ]]; then
+			echo -e "\nNOTE: Only the current filesystem is backed up by default. Attached filesystems will not be backed up."
+			echo -e "This is including but not limited to attached media, virtual filesystems, and other partitions."
+			echo -e "If you want these to be backed up as well, their directories must be manually included.\n"
+			
+			echo "Please enter each inclusion below. (Press enter again when finished)"
+			
+			includes=()
+			include="undefined"
+			until [ -z "$include" ]; do
+				read -p 'Enter included file or directory: ' -e include
+				if [ ! -z "$include" ]; then
+					includes+=("$include")
+				fi
+			done
+			
+			export BACKUP_INCLUDES="${includes[*]}"
+		fi
+		
+		if [ -z "$BACKUP_INCLUDES" ]; then
+			export BACKUP_INCLUDES='/'
+		fi
+	fi
+	
+	
+}
+
+function _load_exclusions {
+	export BACKUP_EXCLUDES="$(_get_input "excluded files" "$EXCLUDES_KEY" true false false)"
+	if [ -z "$BACKUP_EXCLUDES" ]; then
+		echo "backup: No excludes provided."
+		read -p "Do you want to provide exclusions? (Y/n) " want_excludes
+		if [[ $want_excludes =~ ^[Yy] ]]; then
+			echo -e "\nNOTE: Exclusions are entered as regex patterns. Any file path matching at least one pattern will not be backed up.\n"
+			
+			echo "Please enter each exclusion below. (Press enter again when finished)"
+			
+			excludes=()
+			exclude="undefined"
+			until [ -z "$exclude" ]; do
+				read -p 'Enter exclude pattern: ' -e exclude
+				if [ ! -z "$exclude" ]; then
+					excludes+=("$exclude")
+				fi
+			done
+			
+			export BACKUP_EXCLUDES="${excludes[*]}"
+		fi
+	fi
+}
+
+function _load_conf {
+	if [ ! -f "$CONF_FILE" ]; then
+		echo "backup: $CONF_FILE does not exist. Creating..."
+		touch $CONF_FILE || exit $?
+		chmod ug=rw $CONF_FILE || exit $?
+		chmod o-rwx $CONF_FILE || exit $?
+		echo "backup: $CONF_FILE was created."
+	fi
+	
+	export GOOGLE_PROJECT_ID="$(_get_input "Google Project ID" "$PROJECT_ID_KEY" false false false)"
+	
+	_load_credentials
+	_load_inclusions
+	_load_exclusions
+}
+
+function _install {
+	command=$1
+	
+	if ! command -v $command	&> /dev/null ; then
+		echo "backup: $command could not be found. Installing..."
+		apt-get install -y $command || exit $?
+		echo "backup: $command is now installed."
+	else
+		echo "backup: $command already exists."
+	fi
+}
+
+function init {
+	#_install restic
+	_install yq
+	
+	_load_conf
+	
+	echo "GOOGLE_PROJECT_ID = $GOOGLE_PROJECT_ID"
+	echo "GOOGLE_APPLICATION_CREDENTIALS = $GOOGLE_APPLICATION_CREDENTIALS"
+	echo "GOOGLE_ACCESS_TOKEN = $GOOGLE_ACCESS_TOKEN"
+	echo "BACKUP_INCLUDES = $BACKUP_INCLUDES"
+	echo "BACKUP_EXCLUDES = $BACKUP_EXCLUDES"
+}
+
+case $COMMAND in
+	init) 
+		init
+		;;
+	*)
+		echo "backup: error: \"$COMMAND\" is not a known command."  >&2
+		exit 1
+esac
