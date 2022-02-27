@@ -9,16 +9,18 @@ ACCESS_TOKEN_KEY=".backup.google.access-token"
 INCLUDES_KEY=".backup.includes[]"
 EXCLUDES_KEY=".backup.excludes[]"
 
+YQ_MAJOR_VERSION=4
+
 IFS=';'
 
-function _get_input {
-	input="$1"
-	expression="$2"
-	optional=$3
-	silent=$4
-	readline=$5
+function get_input {
+	local input="$1"
+	local expression="$2"
+	local optional=$3
+	local silent=$4
+	local readline=$5
 	
-	flags=()
+	local flags=()
 	if $silent ; then
 		flags+=("-s")
 	fi
@@ -26,43 +28,44 @@ function _get_input {
 		flags+=("-e")
 	fi
 	
-	result="$(yq e "$expression" $CONF_FILE)"
-	if ! $optional && [ -z "$result" ]; then
-		read -p "Please enter your $input: " ${flags[@]} result
+	local result="$(yq e "$expression" $CONF_FILE)"
+	if ! $optional && ([ -z "$result" ] || [ "$result" == "null" ]); then
+		read ${flags[@]} -p "Please enter your $input: " result
 	fi
 	
 	echo "$result"
 }
 
-function _load_credentials {
-	credentials="$(yq e "$JSON_CREDENTIALS_KEY" $CONF_FILE)"
+function load_credentials {
+	local credentials="$(yq e "$JSON_CREDENTIALS_KEY" $CONF_FILE)"
 	if [[ -z "$credentials" || ! -f "$credentials" ]]; then
-		if [ -z "$credentials" ]; then
+		if [ -z "$credentials" ] || [ "$credentials" == "null" ]; then
 			echo "backup: No credentials provided."
 		else
 			echo "backup: Credentials file $credentials does not exist."
 		fi
 		read -p "Do you have a JSON Credentials file? (Y/n) " has_credentials
 		if [[ $has_credentials =~ ^[Yy] ]]; then
-			export GOOGLE_APPLICATION_CREDENTIALS="$(_get_input "Google Credentials File (json)" "$JSON_CREDENTIALS_KEY" false false true)"
+			export GOOGLE_APPLICATION_CREDENTIALS="$(get_input "Google Credentials File (json)" "$JSON_CREDENTIALS_KEY" false false true)"
 			until [ -f "`eval echo ${GOOGLE_APPLICATION_CREDENTIALS//>}`" ]; do
 				echo "$GOOGLE_APPLICATION_CREDENTIALS does not exist. Verify that the provided path is correct and try again."
-				export GOOGLE_APPLICATION_CREDENTIALS="$(_get_input "Google Credentials File (json)" "$JSON_CREDENTIALS_KEY" false false true)"
+				export GOOGLE_APPLICATION_CREDENTIALS="$(get_input "Google Credentials File (json)" "$JSON_CREDENTIALS_KEY" false false true)"
 			done
 		fi
 		
 		if [[ ! $has_credentials =~ ^[Yy] ]]; then
 			echo "backup: Credentials file does not exist. Need access token."
-			export GOOGLE_ACCESS_TOKEN="$(_get_input "Google Access Token" "$ACCESS_TOKEN_KEY" false true false)"
+			export GOOGLE_ACCESS_TOKEN="$(get_input "Google Access Token" "$ACCESS_TOKEN_KEY" false true false)"
+			echo
 		fi
 	fi
 }
 
-function _load_inclusions {
-	export BACKUP_INCLUDES="$(_get_input "included files" "$INCLUDES_KEY" true false false)"
+function load_inclusions {
+	export BACKUP_INCLUDES="$(get_input "included files" "$INCLUDES_KEY" true false false)"
 	if [ -z "$BACKUP_INCLUDES" ]; then
 		echo "backup: No includes provided."
-		echo -e "\n\e[33mWARNING: If no includes are provided, then ' / ' will be backed up.\e[0m\n"
+		echo -e "\n\e[33mWARNING: If no includes are provided, then ' / ' will be backed up.\e[0m\n" >&2
 		read -p "Do you want to provide file and/or directory inclusions? (Y/n) " want_includes
 		if [[ $want_includes =~ ^[Yy] ]]; then
 			echo -e "\nNOTE: Only the current filesystem is backed up by default. Attached filesystems will not be backed up."
@@ -71,8 +74,8 @@ function _load_inclusions {
 			
 			echo "Please enter each inclusion below. (Press enter again when finished)"
 			
-			includes=()
-			include="undefined"
+			local includes=()
+			local include="undefined"
 			until [ -z "$include" ]; do
 				read -p 'Enter included file or directory: ' -e include
 				if [ ! -z "$include" ]; then
@@ -91,8 +94,8 @@ function _load_inclusions {
 	
 }
 
-function _load_exclusions {
-	export BACKUP_EXCLUDES="$(_get_input "excluded files" "$EXCLUDES_KEY" true false false)"
+function load_exclusions {
+	export BACKUP_EXCLUDES="$(get_input "excluded files" "$EXCLUDES_KEY" true false false)"
 	if [ -z "$BACKUP_EXCLUDES" ]; then
 		echo "backup: No excludes provided."
 		read -p "Do you want to provide exclusions? (Y/n) " want_excludes
@@ -101,8 +104,8 @@ function _load_exclusions {
 			
 			echo "Please enter each exclusion below. (Press enter again when finished)"
 			
-			excludes=()
-			exclude="undefined"
+			local excludes=()
+			local exclude="undefined"
 			until [ -z "$exclude" ]; do
 				read -p 'Enter exclude pattern: ' -e exclude
 				if [ ! -z "$exclude" ]; then
@@ -115,7 +118,13 @@ function _load_exclusions {
 	fi
 }
 
-function _load_conf {
+#function update_conf {
+#	echo "backup: Updating conf file..."
+#	yq e -i "$PROJECT_ID_KEY = $GOOGLE_PROJECT_ID" $CONF_FILE || exit $?
+#	echo "backup: $CONF_FILE was updated."
+#}
+
+function load_conf {
 	if [ ! -f "$CONF_FILE" ]; then
 		echo "backup: $CONF_FILE does not exist. Creating..."
 		touch $CONF_FILE || exit $?
@@ -124,30 +133,82 @@ function _load_conf {
 		echo "backup: $CONF_FILE was created."
 	fi
 	
-	export GOOGLE_PROJECT_ID="$(_get_input "Google Project ID" "$PROJECT_ID_KEY" false false false)"
+	export GOOGLE_PROJECT_ID="$(get_input "Google Project ID" "$PROJECT_ID_KEY" false false false)"
 	
-	_load_credentials
-	_load_inclusions
-	_load_exclusions
+	load_credentials
+	load_inclusions
+	load_exclusions
+	
+	#update_conf
 }
 
-function _install {
-	command=$1
+function needs_updating {
+	local command=$1
+	local major_version=$2
+	local latest_version=$3
+	local current_version=$4
+	
+	local IFS='.'
+	read -r -a latest_array <<< "$latest_version"
+	read -r -a current_array <<< "$current_version"
+	
+	needs_updating=false
+	if [ ${current_array[0]} -gt $major_version ]; then
+		echo -e "\e[33mWARNING: current $command version is greater than '$major_version.x'. Only $major_version.x versions are\e[0m" >&2
+		echo -e "\e[33msupported at this time. This may cause instability.\e[0m\n" >&2
+	else
+		for i in "${!latest_array[@]}"; do
+			if [ ${latest_array[i]} -gt ${current_array[i]} ]; then 
+				needs_updating=true
+				break
+			fi
+		done
+	fi
+	
+	echo $needs_updating
+}
+
+function yq_needs_updating {
+	local latest="$(curl -s -X GET -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/mikefarah/yq/releases | grep -w tag_name | sed -rn "s/.*(${YQ_MAJOR_VERSION}\.[0-9]+\.[0-9]+).*/\1/p" | head -n 1)"
+	local current="$(yq -V | sed -rn "s/.*([0-9]+\.[0-9]+\.[0-9]+).*/\1/p")"
+	
+	echo $(needs_updating yq $YQ_MAJOR_VERSION $latest $current)
+}
+
+function install_yq {
+	local latest_version="$(curl -s -X GET -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/mikefarah/yq/releases | grep -w tag_name | sed -rn "s/.*(${YQ_MAJOR_VERSION}\.[0-9]+\.[0-9]+).*/\1/p" | head -n 1)"
+	
+	wget https://github.com/mikefarah/yq/releases/download/v${latest_version}/yq_linux_amd64.tar.gz -O - | tar xz && mv yq_linux_amd64 /usr/bin/yq || exit $?
+	./install-man-page.sh
+	rm install-man-page.sh
+	rm yq.1
+}
+
+function update_yq {
+	install_yq
+}
+
+function check {
+	local command=$1
 	
 	if ! command -v $command	&> /dev/null ; then
 		echo "backup: $command could not be found. Installing..."
-		apt-get install -y $command || exit $?
+		install_${command}
 		echo "backup: $command is now installed."
+	elif "$(${command}_needs_updating)" ; then
+		echo "backup: $command out of date. Updating..."
+		update_${command}
+		echo "backup: $command is now updated."
 	else
-		echo "backup: $command already exists."
+		echo "backup: $command already exists and is up-to-date."
 	fi
 }
 
 function init {
-	#_install restic
-	_install yq
+	#check restic
+	check yq
 	
-	_load_conf
+	load_conf
 	
 	echo "GOOGLE_PROJECT_ID = $GOOGLE_PROJECT_ID"
 	echo "GOOGLE_APPLICATION_CREDENTIALS = $GOOGLE_APPLICATION_CREDENTIALS"
