@@ -6,12 +6,14 @@ CONF_FILE=backup.conf
 PROJECT_ID_KEY=".backup.google.project-id"
 JSON_CREDENTIALS_KEY=".backup.google.credentials"
 ACCESS_TOKEN_KEY=".backup.google.access-token"
-INCLUDES_KEY=".backup.includes[]"
-EXCLUDES_KEY=".backup.excludes[]"
+INCLUDES_KEY=".backup.includes"
+INCLUDES_ARR_KEY=".backup.includes[]"
+EXCLUDES_KEY=".backup.excludes"
+EXCLUDES_ARR_KEY=".backup.excludes[]"
 
 YQ_MAJOR_VERSION=4
 
-IFS=';'
+IFS=$'\n'
 
 function get_input {
 	local input="$1"
@@ -62,7 +64,7 @@ function load_credentials {
 }
 
 function load_inclusions {
-	export BACKUP_INCLUDES="$(get_input "included files" "$INCLUDES_KEY" true false false)"
+	export BACKUP_INCLUDES="$(get_input "included files" "$INCLUDES_ARR_KEY" true false false)"
 	if [ -z "$BACKUP_INCLUDES" ]; then
 		echo "backup: No includes provided."
 		echo -e "\n\e[33mWARNING: If no includes are provided, then ' / ' will be backed up.\e[0m\n" >&2
@@ -87,15 +89,13 @@ function load_inclusions {
 		fi
 		
 		if [ -z "$BACKUP_INCLUDES" ]; then
-			export BACKUP_INCLUDES='/'
+			export BACKUP_INCLUDES=('/')
 		fi
 	fi
-	
-	
 }
 
 function load_exclusions {
-	export BACKUP_EXCLUDES="$(get_input "excluded files" "$EXCLUDES_KEY" true false false)"
+	export BACKUP_EXCLUDES="$(get_input "excluded files" "$EXCLUDES_ARR_KEY" true false false)"
 	if [ -z "$BACKUP_EXCLUDES" ]; then
 		echo "backup: No excludes provided."
 		read -p "Do you want to provide exclusions? (Y/n) " want_excludes
@@ -118,11 +118,33 @@ function load_exclusions {
 	fi
 }
 
-#function update_conf {
-#	echo "backup: Updating conf file..."
-#	yq e -i "$PROJECT_ID_KEY = $GOOGLE_PROJECT_ID" $CONF_FILE || exit $?
-#	echo "backup: $CONF_FILE was updated."
-#}
+function update_conf {
+	echo "backup: Updating conf file..."
+	
+	yq e -i "$PROJECT_ID_KEY = \"$GOOGLE_PROJECT_ID\"" $CONF_FILE || exit $?
+	
+	if [ ! -z "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
+		yq e -i "$JSON_CREDENTIALS_KEY = \"$GOOGLE_APPLICATION_CREDENTIALS\"" $CONF_FILE || exit $?
+	fi
+	
+	if [ ! -z "$GOOGLE_ACCESS_TOKEN" ]; then
+		yq e -i "$ACCESS_TOKEN_KEY = \"$GOOGLE_ACCESS_TOKEN\"" $CONF_FILE || exit $?
+	fi
+	
+	if [ ! -z "$BACKUP_INCLUDES" ]; then
+		for include in "$BACKUP_INCLUDES"; do
+			yq e -i "$INCLUDES_KEY |= . + [\"$include\"]" $CONF_FILE || exit $?
+		done
+	fi
+	
+	if [ ! -z "$BACKUP_EXCLUDES" ]; then
+		for exclude in "$BACKUP_EXCLUDES"; do
+			yq e -i "$EXCLUDES_KEY |= . + [\"$exclude\"]" $CONF_FILE || exit $?
+		done
+	fi
+	
+	echo "backup: $CONF_FILE was updated."
+}
 
 function load_conf {
 	if [ ! -f "$CONF_FILE" ]; then
@@ -139,7 +161,7 @@ function load_conf {
 	load_inclusions
 	load_exclusions
 	
-	#update_conf
+	update_conf
 }
 
 function needs_updating {
