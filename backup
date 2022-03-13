@@ -15,6 +15,10 @@ YQ_MAJOR_VERSION=4
 
 IFS=$'\n'
 
+if (( $EUID != 0 )); then
+    SUDO=sudo
+fi
+
 function get_input {
 	local input="$1"
 	local expression="$2"
@@ -39,34 +43,48 @@ function get_input {
 }
 
 function load_credentials {
-	local credentials="$(yq e "$JSON_CREDENTIALS_KEY" $CONF_FILE)"
-	if [[ -z "$credentials" || ! -f "$credentials" ]]; then
-		if [ -z "$credentials" ] || [ "$credentials" == "null" ]; then
-			echo "backup: No credentials provided."
+	local credentials_file_input="Google Credentials File (json)"
+	local access_token_input="Google Access Token"
+
+	export JSON_CREDENTIALS_FILE="$(get_input "$credentials_file_input" "$JSON_CREDENTIALS_KEY" true false false)"
+	export GOOGLE_APPLICATION_CREDENTIALS="`eval echo ${JSON_CREDENTIALS_FILE//>}`"
+	if [[ -z "$GOOGLE_APPLICATION_CREDENTIALS" || ! -f "$GOOGLE_APPLICATION_CREDENTIALS" ]]; then
+		if [ -z "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
+			echo "${LOG_PREFIX}: No credentials provided."
 		else
-			echo "backup: Credentials file $credentials does not exist."
+			echo "${LOG_PREFIX}: Credentials file '$GOOGLE_APPLICATION_CREDENTIALS' does not exist."
 		fi
+		
 		read -p "Do you have a JSON Credentials file? (Y/n) " has_credentials
 		if [[ $has_credentials =~ ^[Yy] ]]; then
-			export GOOGLE_APPLICATION_CREDENTIALS="$(get_input "Google Credentials File (json)" "$JSON_CREDENTIALS_KEY" false false true)"
-			until [ -f "`eval echo ${GOOGLE_APPLICATION_CREDENTIALS//>}`" ]; do
-				echo "$GOOGLE_APPLICATION_CREDENTIALS does not exist. Verify that the provided path is correct and try again."
-				export GOOGLE_APPLICATION_CREDENTIALS="$(get_input "Google Credentials File (json)" "$JSON_CREDENTIALS_KEY" false false true)"
+			export JSON_CREDENTIALS_FILE="$(get_input "$credentials_file_input" "$JSON_CREDENTIALS_KEY" false false true)"
+			export GOOGLE_APPLICATION_CREDENTIALS="`eval echo ${JSON_CREDENTIALS_FILE//>}`"
+			until [ -f "$GOOGLE_APPLICATION_CREDENTIALS" ]; do
+				echo "'$GOOGLE_APPLICATION_CREDENTIALS' does not exist. Verify that the provided path is correct and try again."
+				read -e -p "Please enter your ${credentials_file_input}:" JSON_CREDENTIALS_FILE
+				export JSON_CREDENTIALS_FILE
+				export GOOGLE_APPLICATION_CREDENTIALS="`eval echo ${JSON_CREDENTIALS_FILE//>}`"
 			done
+			
+			export GOOGLE_ACCESS_TOKEN="$(get_input "$access_token_input" "$ACCESS_TOKEN_KEY" true false false)"
 		fi
 		
 		if [[ ! $has_credentials =~ ^[Yy] ]]; then
-			echo "backup: Credentials file does not exist. Need access token."
-			export GOOGLE_ACCESS_TOKEN="$(get_input "Google Access Token" "$ACCESS_TOKEN_KEY" false true false)"
+			echo "${LOG_PREFIX}: Credentials file does not exist. Need access token."
+			export JSON_CREDENTIALS_FILE=""
+			export GOOGLE_APPLICATION_CREDENTIALS=""
+			export GOOGLE_ACCESS_TOKEN="$(get_input "$access_token_input" "$ACCESS_TOKEN_KEY" false true false)"
 			echo
 		fi
 	fi
 }
 
 function load_inclusions {
+	export LOADED_INCLUDES=false
+
 	export BACKUP_INCLUDES="$(get_input "included files" "$INCLUDES_ARR_KEY" true false false)"
 	if [ -z "$BACKUP_INCLUDES" ]; then
-		echo "backup: No includes provided."
+		echo "${LOG_PREFIX}: No includes provided."
 		echo -e "\n\e[33mWARNING: If no includes are provided, then ' / ' will be backed up.\e[0m\n" >&2
 		read -p "Do you want to provide file and/or directory inclusions? (Y/n) " want_includes
 		if [[ $want_includes =~ ^[Yy] ]]; then
@@ -86,18 +104,22 @@ function load_inclusions {
 			done
 			
 			export BACKUP_INCLUDES="${includes[*]}"
+			export LOADED_INCLUDES=true
 		fi
 		
 		if [ -z "$BACKUP_INCLUDES" ]; then
 			export BACKUP_INCLUDES=('/')
+			export LOADED_INCLUDES=true
 		fi
 	fi
 }
 
 function load_exclusions {
+	export LOADED_EXCLUDES=false
+	
 	export BACKUP_EXCLUDES="$(get_input "excluded files" "$EXCLUDES_ARR_KEY" true false false)"
 	if [ -z "$BACKUP_EXCLUDES" ]; then
-		echo "backup: No excludes provided."
+		echo "${LOG_PREFIX}: No excludes provided."
 		read -p "Do you want to provide exclusions? (Y/n) " want_excludes
 		if [[ $want_excludes =~ ^[Yy] ]]; then
 			echo -e "\nNOTE: Exclusions are entered as regex patterns. Any file path matching at least one pattern will not be backed up.\n"
@@ -114,45 +136,71 @@ function load_exclusions {
 			done
 			
 			export BACKUP_EXCLUDES="${excludes[*]}"
+			export LOADED_EXCLUDES=true
 		fi
 	fi
 }
 
 function update_conf {
-	echo "backup: Updating conf file..."
+	echo "${LOG_PREFIX}: Updating conf file..."
 	
 	yq e -i "$PROJECT_ID_KEY = \"$GOOGLE_PROJECT_ID\"" $CONF_FILE || exit $?
 	
-	if [ ! -z "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
-		yq e -i "$JSON_CREDENTIALS_KEY = \"$GOOGLE_APPLICATION_CREDENTIALS\"" $CONF_FILE || exit $?
+	if [ ! -z "$JSON_CREDENTIALS_FILE" ]; then
+		yq e -i "$JSON_CREDENTIALS_KEY = \"$JSON_CREDENTIALS_FILE\"" $CONF_FILE || exit $?
 	fi
 	
 	if [ ! -z "$GOOGLE_ACCESS_TOKEN" ]; then
 		yq e -i "$ACCESS_TOKEN_KEY = \"$GOOGLE_ACCESS_TOKEN\"" $CONF_FILE || exit $?
 	fi
 	
-	if [ ! -z "$BACKUP_INCLUDES" ]; then
-		for include in "$BACKUP_INCLUDES"; do
+	if $LOADED_INCLUDES ; then
+		for include in $BACKUP_INCLUDES; do
 			yq e -i "$INCLUDES_KEY |= . + [\"$include\"]" $CONF_FILE || exit $?
 		done
 	fi
 	
-	if [ ! -z "$BACKUP_EXCLUDES" ]; then
-		for exclude in "$BACKUP_EXCLUDES"; do
+	if $LOADED_EXCLUDES ; then
+		for exclude in $BACKUP_EXCLUDES; do
 			yq e -i "$EXCLUDES_KEY |= . + [\"$exclude\"]" $CONF_FILE || exit $?
 		done
 	fi
 	
-	echo "backup: $CONF_FILE was updated."
+	echo "${LOG_PREFIX}: $CONF_FILE was updated."
+}
+
+function load_grp {
+	local user_group="$1"
+	local current_primary_group="$(id -gn)"
+	
+	if ! ( id -Gn | grep -qwF "$user_group" ); then
+		#newgrp "$user_group"
+		#newgrp "$current_primary_group"
+		$SUDO su - $USER || exit $? #Doesn't fully work yet
+	fi
+}
+
+function create_conf {
+	local user="$1"
+	local user_group=backup
+
+	getent group "$user_group" > /dev/null || $SUDO groupadd "$user_group"
+	
+	$SUDO touch $CONF_FILE || exit $?
+	$SUDO chgrp "$user_group" $CONF_FILE || exit $?
+	$SUDO chmod ug=rw $CONF_FILE || exit $?
+	$SUDO chmod o-rwx $CONF_FILE || exit $?
+	
+	groups "$user" | grep -qwF "$user_group" || $SUDO usermod -a -G "$user_group" "$user"
+	
+	load_grp "$user_group"
 }
 
 function load_conf {
 	if [ ! -f "$CONF_FILE" ]; then
-		echo "backup: $CONF_FILE does not exist. Creating..."
-		touch $CONF_FILE || exit $?
-		chmod ug=rw $CONF_FILE || exit $?
-		chmod o-rwx $CONF_FILE || exit $?
-		echo "backup: $CONF_FILE was created."
+		echo "${LOG_PREFIX}: $CONF_FILE does not exist. Creating..."
+		create_conf "$USER"
+		echo "${LOG_PREFIX}: $CONF_FILE was created."
 	fi
 	
 	export GOOGLE_PROJECT_ID="$(get_input "Google Project ID" "$PROJECT_ID_KEY" false false false)"
@@ -200,7 +248,7 @@ function yq_needs_updating {
 function install_yq {
 	local latest_version="$(curl -s -X GET -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/mikefarah/yq/releases | grep -w tag_name | sed -rn "s/.*(${YQ_MAJOR_VERSION}\.[0-9]+\.[0-9]+).*/\1/p" | head -n 1)"
 	
-	wget https://github.com/mikefarah/yq/releases/download/v${latest_version}/yq_linux_amd64.tar.gz -O - | tar xz && mv yq_linux_amd64 /usr/bin/yq || exit $?
+	$SUDO wget https://github.com/mikefarah/yq/releases/download/v${latest_version}/yq_linux_amd64.tar.gz -O - | tar xz && mv yq_linux_amd64 /usr/bin/yq || exit $?
 	./install-man-page.sh
 	rm install-man-page.sh
 	rm yq.1
@@ -214,36 +262,42 @@ function check {
 	local command=$1
 	
 	if ! command -v $command	&> /dev/null ; then
-		echo "backup: $command could not be found. Installing..."
+		echo "${LOG_PREFIX}: $command could not be found. Installing..."
 		install_${command}
-		echo "backup: $command is now installed."
+		echo "${LOG_PREFIX}: $command is now installed."
 	elif "$(${command}_needs_updating)" ; then
-		echo "backup: $command out of date. Updating..."
+		echo "${LOG_PREFIX}: $command out of date. Updating..."
 		update_${command}
-		echo "backup: $command is now updated."
+		echo "${LOG_PREFIX}: $command is now updated."
 	else
-		echo "backup: $command already exists and is up-to-date."
+		echo "${LOG_PREFIX}: $command already exists and is up-to-date."
 	fi
 }
 
 function init {
+	echo "${LOG_PREFIX}: init"
+	export LOG_PREFIX="backup-init"
+
 	#check restic
 	check yq
 	
 	load_conf
 	
 	echo "GOOGLE_PROJECT_ID = $GOOGLE_PROJECT_ID"
+	echo "JSON_CREDENTIALS_FILE = $JSON_CREDENTIALS_FILE"
 	echo "GOOGLE_APPLICATION_CREDENTIALS = $GOOGLE_APPLICATION_CREDENTIALS"
 	echo "GOOGLE_ACCESS_TOKEN = $GOOGLE_ACCESS_TOKEN"
 	echo "BACKUP_INCLUDES = $BACKUP_INCLUDES"
 	echo "BACKUP_EXCLUDES = $BACKUP_EXCLUDES"
 }
 
+export LOG_PREFIX="backup"
+
 case $COMMAND in
 	init) 
 		init
 		;;
 	*)
-		echo "backup: error: \"$COMMAND\" is not a known command."  >&2
+		echo "${LOG_PREFIX}: error: \"$COMMAND\" is not a known command."  >&2
 		exit 1
 esac
