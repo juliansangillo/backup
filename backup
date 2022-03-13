@@ -15,7 +15,7 @@ YQ_MAJOR_VERSION=4
 
 IFS=$'\n'
 
-if (( $EUID != 0 )); then
+if [ $EUID -ne 0 ]; then
     SUDO=sudo
 fi
 
@@ -35,7 +35,11 @@ function get_input {
 	fi
 	
 	local result="$(yq e "$expression" $CONF_FILE)"
-	if ! $optional && ([ -z "$result" ] || [ "$result" == "null" ]); then
+	if [ "$result" == "null" ]; then
+		local result=""
+	fi
+	
+	if ! $optional && [ -z "$result" ]; then
 		read ${flags[@]} -p "Please enter your $input: " result
 	fi
 	
@@ -169,37 +173,19 @@ function update_conf {
 	echo "${LOG_PREFIX}: $CONF_FILE was updated."
 }
 
-function load_grp {
-	local user_group="$1"
-	local current_primary_group="$(id -gn)"
-	
-	if ! ( id -Gn | grep -qwF "$user_group" ); then
-		#newgrp "$user_group"
-		#newgrp "$current_primary_group"
-		$SUDO su - $USER || exit $? #Doesn't fully work yet
-	fi
-}
-
 function create_conf {
-	local user="$1"
-	local user_group=backup
-
-	getent group "$user_group" > /dev/null || $SUDO groupadd "$user_group"
+	local user_group="$(id -gn)"
 	
 	$SUDO touch $CONF_FILE || exit $?
 	$SUDO chgrp "$user_group" $CONF_FILE || exit $?
 	$SUDO chmod ug=rw $CONF_FILE || exit $?
 	$SUDO chmod o-rwx $CONF_FILE || exit $?
-	
-	groups "$user" | grep -qwF "$user_group" || $SUDO usermod -a -G "$user_group" "$user"
-	
-	load_grp "$user_group"
 }
 
 function load_conf {
 	if [ ! -f "$CONF_FILE" ]; then
 		echo "${LOG_PREFIX}: $CONF_FILE does not exist. Creating..."
-		create_conf "$USER"
+		create_conf
 		echo "${LOG_PREFIX}: $CONF_FILE was created."
 	fi
 	
