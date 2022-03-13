@@ -78,7 +78,6 @@ function load_credentials {
 			export JSON_CREDENTIALS_FILE=""
 			export GOOGLE_APPLICATION_CREDENTIALS=""
 			export GOOGLE_ACCESS_TOKEN="$(get_input "$access_token_input" "$ACCESS_TOKEN_KEY" false true false)"
-			echo
 		fi
 	fi
 }
@@ -189,11 +188,13 @@ function load_conf {
 		echo "${LOG_PREFIX}: $CONF_FILE was created."
 	fi
 	
+	echo "${LOG_PREFIX}: Loading conf file..."
 	export GOOGLE_PROJECT_ID="$(get_input "Google Project ID" "$PROJECT_ID_KEY" false false false)"
 	
 	load_credentials
 	load_inclusions
 	load_exclusions
+	echo "${LOG_PREFIX}: $CONF_FILE was loaded."
 	
 	update_conf
 }
@@ -210,7 +211,7 @@ function needs_updating {
 	
 	needs_updating=false
 	if [ ${current_array[0]} -gt $major_version ]; then
-		echo -e "\e[33mWARNING: current $command version is greater than '$major_version.x'. Only $major_version.x versions are\e[0m" >&2
+		echo -e "\n\e[33mWARNING: current $command version is greater than '$major_version.x'. Only $major_version.x versions are\e[0m" >&2
 		echo -e "\e[33msupported at this time. This may cause instability.\e[0m\n" >&2
 	else
 		for i in "${!latest_array[@]}"; do
