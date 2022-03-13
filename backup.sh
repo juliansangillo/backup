@@ -2,7 +2,7 @@
 
 COMMAND=$1
 
-CONF_FILE=backup.conf
+CONF_FILE=/etc/backup.conf
 PROJECT_ID_KEY=".backup.google.project-id"
 JSON_CREDENTIALS_KEY=".backup.google.credentials"
 ACCESS_TOKEN_KEY=".backup.google.access-token"
@@ -66,8 +66,9 @@ function load_credentials {
 	local credentials_file_input="Google Credentials File (json)"
 	local access_token_input="Google Access Token"
 
-	export JSON_CREDENTIALS_FILE="$(get_input "$credentials_file_input" "$JSON_CREDENTIALS_KEY" true false false)"
+	JSON_CREDENTIALS_FILE="$(get_input "$credentials_file_input" "$JSON_CREDENTIALS_KEY" true false false)"
 	export GOOGLE_APPLICATION_CREDENTIALS="`eval echo ${JSON_CREDENTIALS_FILE//>}`"
+	export GOOGLE_ACCESS_TOKEN="$(get_input "$access_token_input" "$ACCESS_TOKEN_KEY" true false false)"
 	if [[ -z "$GOOGLE_APPLICATION_CREDENTIALS" || ! -f "$GOOGLE_APPLICATION_CREDENTIALS" ]]; then
 		if [ -z "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
 			echo "${LOG_PREFIX}: No credentials provided."
@@ -77,21 +78,18 @@ function load_credentials {
 		
 		has_credentials="$(read_input "Do you have a JSON Credentials file? (Y/n) ")"
 		if [[ $has_credentials =~ ^[Yy] ]]; then
-			export JSON_CREDENTIALS_FILE="$(get_input "$credentials_file_input" "$JSON_CREDENTIALS_KEY" false false true)"
+			JSON_CREDENTIALS_FILE="$(get_input "$credentials_file_input" "$JSON_CREDENTIALS_KEY" false false true)"
 			export GOOGLE_APPLICATION_CREDENTIALS="`eval echo ${JSON_CREDENTIALS_FILE//>}`"
 			until [ -f "$GOOGLE_APPLICATION_CREDENTIALS" ]; do
 				echo "'$GOOGLE_APPLICATION_CREDENTIALS' does not exist. Verify that the provided path is correct and try again."
 				JSON_CREDENTIALS_FILE="$(read_input "Please enter your ${credentials_file_input}:" "-e")"
-				export JSON_CREDENTIALS_FILE
 				export GOOGLE_APPLICATION_CREDENTIALS="`eval echo ${JSON_CREDENTIALS_FILE//>}`"
 			done
-			
-			export GOOGLE_ACCESS_TOKEN="$(get_input "$access_token_input" "$ACCESS_TOKEN_KEY" true false false)"
 		fi
 		
 		if [[ ! $has_credentials =~ ^[Yy] ]]; then
 			echo "${LOG_PREFIX}: Credentials file does not exist. Need access token."
-			export JSON_CREDENTIALS_FILE=""
+			JSON_CREDENTIALS_FILE=""
 			export GOOGLE_APPLICATION_CREDENTIALS=""
 			export GOOGLE_ACCESS_TOKEN="$(get_input "$access_token_input" "$ACCESS_TOKEN_KEY" false true false)"
 			echo
