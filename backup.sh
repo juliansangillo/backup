@@ -16,7 +16,7 @@ YQ_MAJOR_VERSION=4
 IFS=$'\n'
 
 if [ $EUID -ne 0 ]; then
-    SUDO=sudo
+    SUDO='sudo -p "Password for $USER: "'
 fi
 
 function get_input {
@@ -175,10 +175,10 @@ function update_conf {
 function create_conf {
 	local user_group="$(id -gn)"
 	
-	$SUDO touch $CONF_FILE || exit $?
-	$SUDO chgrp "$user_group" $CONF_FILE || exit $?
-	$SUDO chmod ug=rw $CONF_FILE || exit $?
-	$SUDO chmod o-rwx $CONF_FILE || exit $?
+	eval $SUDO touch $CONF_FILE || exit $?
+	eval $SUDO chgrp "$user_group" $CONF_FILE || exit $?
+	eval $SUDO chmod ug=rw $CONF_FILE || exit $?
+	eval $SUDO chmod o-rwx $CONF_FILE || exit $?
 }
 
 function load_conf {
@@ -235,7 +235,7 @@ function yq_needs_updating {
 function install_yq {
 	local latest_version="$(curl -s -X GET -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/mikefarah/yq/releases | grep -w tag_name | sed -rn "s/.*(${YQ_MAJOR_VERSION}\.[0-9]+\.[0-9]+).*/\1/p" | head -n 1)"
 	
-	$SUDO wget https://github.com/mikefarah/yq/releases/download/v${latest_version}/yq_linux_amd64.tar.gz -O - | tar xz && mv yq_linux_amd64 /usr/bin/yq || exit $?
+	eval $SUDO wget https://github.com/mikefarah/yq/releases/download/v${latest_version}/yq_linux_amd64.tar.gz -O - | tar xz && mv yq_linux_amd64 /usr/bin/yq || exit $?
 	./install-man-page.sh
 	rm install-man-page.sh
 	rm yq.1
