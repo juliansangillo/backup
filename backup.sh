@@ -19,12 +19,28 @@ if [ $EUID -ne 0 ]; then
     SUDO='sudo -p "Password for $USER: "'
 fi
 
+function trim {
+	local str="$1"
+	
+	echo "$str" | sed 's/^ *//g' | sed 's/ *$//g'
+}
+
+function read_input {
+	local result=""
+	local prompt="$1"
+	local flags="$2"
+	
+	read -p "$prompt" ${flags[@]} result
+	
+	echo "$(trim "$result")"
+}
+
 function get_input {
 	local input="$1"
 	local expression="$2"
 	local optional=$3
 	local silent=$4
-	local readline=$5
+	local readline=$5 #this is for autocompleting paths
 	
 	local flags=()
 	if $silent ; then
@@ -40,10 +56,10 @@ function get_input {
 	fi
 	
 	if ! $optional && [ -z "$result" ]; then
-		read ${flags[@]} -p "Please enter your $input: " result
+		local result="$(read_input "Please enter your $input: " "${flags[@]}")"
 	fi
 	
-	echo "$result"
+	echo "$(trim "$result")"
 }
 
 function load_credentials {
@@ -59,13 +75,13 @@ function load_credentials {
 			echo "${LOG_PREFIX}: Credentials file '$GOOGLE_APPLICATION_CREDENTIALS' does not exist."
 		fi
 		
-		read -p "Do you have a JSON Credentials file? (Y/n) " has_credentials
+		has_credentials="$(read_input "Do you have a JSON Credentials file? (Y/n) ")"
 		if [[ $has_credentials =~ ^[Yy] ]]; then
 			export JSON_CREDENTIALS_FILE="$(get_input "$credentials_file_input" "$JSON_CREDENTIALS_KEY" false false true)"
 			export GOOGLE_APPLICATION_CREDENTIALS="`eval echo ${JSON_CREDENTIALS_FILE//>}`"
 			until [ -f "$GOOGLE_APPLICATION_CREDENTIALS" ]; do
 				echo "'$GOOGLE_APPLICATION_CREDENTIALS' does not exist. Verify that the provided path is correct and try again."
-				read -e -p "Please enter your ${credentials_file_input}:" JSON_CREDENTIALS_FILE
+				JSON_CREDENTIALS_FILE="$(read_input "Please enter your ${credentials_file_input}:" "-e")"
 				export JSON_CREDENTIALS_FILE
 				export GOOGLE_APPLICATION_CREDENTIALS="`eval echo ${JSON_CREDENTIALS_FILE//>}`"
 			done
@@ -78,6 +94,7 @@ function load_credentials {
 			export JSON_CREDENTIALS_FILE=""
 			export GOOGLE_APPLICATION_CREDENTIALS=""
 			export GOOGLE_ACCESS_TOKEN="$(get_input "$access_token_input" "$ACCESS_TOKEN_KEY" false true false)"
+			echo
 		fi
 	fi
 }
@@ -89,7 +106,7 @@ function load_inclusions {
 	if [ -z "$BACKUP_INCLUDES" ]; then
 		echo "${LOG_PREFIX}: No includes provided."
 		echo -e "\n\e[33mWARNING: If no includes are provided, then ' / ' will be backed up.\e[0m\n" >&2
-		read -p "Do you want to provide file and/or directory inclusions? (Y/n) " want_includes
+		want_includes="$(read_input "Do you want to provide file and/or directory inclusions? (Y/n) ")"
 		if [[ $want_includes =~ ^[Yy] ]]; then
 			echo -e "\nNOTE: Only the current filesystem is backed up by default. Attached filesystems will not be backed up."
 			echo -e "This is including but not limited to attached media, virtual filesystems, and other partitions."
@@ -100,7 +117,7 @@ function load_inclusions {
 			local includes=()
 			local include="undefined"
 			until [ -z "$include" ]; do
-				read -p 'Enter included file or directory: ' -e include
+				include="$(read_input 'Enter included file or directory: ' '-e')"
 				if [ ! -z "$include" ]; then
 					includes+=("$include")
 				fi
@@ -123,7 +140,7 @@ function load_exclusions {
 	export BACKUP_EXCLUDES="$(get_input "excluded files" "$EXCLUDES_ARR_KEY" true false false)"
 	if [ -z "$BACKUP_EXCLUDES" ]; then
 		echo "${LOG_PREFIX}: No excludes provided."
-		read -p "Do you want to provide exclusions? (Y/n) " want_excludes
+		want_excludes="$(read_input "Do you want to provide exclusions? (Y/n) ")"
 		if [[ $want_excludes =~ ^[Yy] ]]; then
 			echo -e "\nNOTE: Exclusions are entered as regex patterns. Any file path matching at least one pattern will not be backed up.\n"
 			
@@ -132,7 +149,7 @@ function load_exclusions {
 			local excludes=()
 			local exclude="undefined"
 			until [ -z "$exclude" ]; do
-				read -p 'Enter exclude pattern: ' -e exclude
+				exclude="$(read_input 'Enter exclude pattern: ' '-e')"
 				if [ ! -z "$exclude" ]; then
 					excludes+=("$exclude")
 				fi
