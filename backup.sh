@@ -3,6 +3,8 @@
 COMMAND=$1
 
 CONF_FILE=/etc/backup.conf
+REPOSITORY_KEY=".backup.restic.repository"
+PASSWORD_KEY=".backup.restic.password"
 PROJECT_ID_KEY=".backup.google.project-id"
 JSON_CREDENTIALS_KEY=".backup.google.credentials"
 ACCESS_TOKEN_KEY=".backup.google.access-token"
@@ -61,6 +63,19 @@ function get_input {
 	fi
 	
 	echo "$(trim "$result")"
+}
+
+function load_password {
+	export RESTIC_PASSWORD="$(get_input "password for new repository" "$PASSWORD_KEY" false true false)"
+	echo
+	
+	RESTIC_PASSWORD_CONFIRM="$(get_input "password again" "$PASSWORD_KEY" false true false)"
+	echo
+	
+	if [ "$RESTIC_PASSWORD" != "$RESTIC_PASSWORD_CONFIRM" ]; then
+		echo "${LOG_PREFIX}: error: Passwords don't match. Please try again." >&2
+		exit 2
+	fi
 }
 
 function load_credentials {
@@ -164,6 +179,8 @@ function update_conf {
 	echo "${LOG_PREFIX}: Updating conf file..."
 	
 	yq e -i "$PROJECT_ID_KEY = \"$GOOGLE_PROJECT_ID\"" $CONF_FILE || exit $?
+	yq e -i "$REPOSITORY_KEY = \"$RESTIC_REPOSITORY\"" $CONF_FILE || exit $?
+	yq e -i "$PASSWORD_KEY = \"$RESTIC_PASSWORD\"" $CONF_FILE || exit $?
 	
 	if [ ! -z "$JSON_CREDENTIALS_FILE" ]; then
 		yq e -i "$JSON_CREDENTIALS_KEY = \"$JSON_CREDENTIALS_FILE\"" $CONF_FILE || exit $?
@@ -206,6 +223,8 @@ function load_conf {
 	
 	echo "${LOG_PREFIX}: Loading conf file..."
 	export GOOGLE_PROJECT_ID="$(get_input "Google Project ID" "$PROJECT_ID_KEY" false false false)"
+	export RESTIC_REPOSITORY="$(get_input "repository as a Google Storage Bucket: gs" "$REPOSITORY_KEY" false false false)"
+	load_password
 	
 	load_credentials
 	load_inclusions
@@ -306,6 +325,8 @@ function init {
 	
 	
 	
+	echo "RESTIC_REPOSITORY = $RESTIC_REPOSITORY"
+	echo "RESTIC_PASSWORD = $RESTIC_PASSWORD"
 	echo "GOOGLE_PROJECT_ID = $GOOGLE_PROJECT_ID"
 	echo "JSON_CREDENTIALS_FILE = $JSON_CREDENTIALS_FILE"
 	echo "GOOGLE_APPLICATION_CREDENTIALS = $GOOGLE_APPLICATION_CREDENTIALS"
