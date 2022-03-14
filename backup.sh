@@ -11,6 +11,7 @@ INCLUDES_ARR_KEY=".backup.includes[]"
 EXCLUDES_KEY=".backup.excludes"
 EXCLUDES_ARR_KEY=".backup.excludes[]"
 
+RESTIC_MAJOR_VERSION=0
 YQ_MAJOR_VERSION=4
 
 IFS=$'\n'
@@ -240,6 +241,24 @@ function needs_updating {
 	echo $needs_updating
 }
 
+function restic_needs_updating {
+	local latest="$(apt-cache madison restic | sed -rn "s/.*(${RESTIC_MAJOR_VERSION}\.[0-9]+\.[0-9]+).*/\1/p" | head -n 1)"
+	local current="$(restic version | sed -rn "s/.*[ ]([0-9]+\.[0-9]+\.[0-9]+)[ ].*/\1/p")"
+	
+	echo $(needs_updating restic $RESTIC_MAJOR_VERSION $latest $current)
+}
+
+function install_restic {
+	local latest_version="$(apt-cache madison restic | sed -rn "s/.*(${RESTIC_MAJOR_VERSION}\.[0-9]+\.[0-9]+[^ ]*).*/\1/p" | head -n 1)"
+
+	eval $SUDO apt-get update
+	eval $SUDO apt-get install restic=$latest_version
+}
+
+function update_restic {
+	install_restic
+}
+
 function yq_needs_updating {
 	local latest="$(curl -s -X GET -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/mikefarah/yq/releases | grep -w tag_name | sed -rn "s/.*(${YQ_MAJOR_VERSION}\.[0-9]+\.[0-9]+).*/\1/p" | head -n 1)"
 	local current="$(yq -V | sed -rn "s/.*([0-9]+\.[0-9]+\.[0-9]+).*/\1/p")"
@@ -280,10 +299,12 @@ function init {
 	echo "${LOG_PREFIX}: init"
 	export LOG_PREFIX="backup-init"
 
-	#check restic
+	check restic
 	check yq
 	
 	load_conf
+	
+	
 	
 	echo "GOOGLE_PROJECT_ID = $GOOGLE_PROJECT_ID"
 	echo "JSON_CREDENTIALS_FILE = $JSON_CREDENTIALS_FILE"
