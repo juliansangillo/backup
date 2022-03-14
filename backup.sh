@@ -65,6 +65,13 @@ function get_input {
 	echo "$(trim "$result")"
 }
 
+function load_repository {
+	export RESTIC_REPOSITORY="$(get_input "repository as a Google Storage Bucket: gs" "$REPOSITORY_KEY" true false false)"
+	if [ -z "$RESTIC_REPOSITORY" ]; then
+		export RESTIC_REPOSITORY="gs:$(get_input "repository as a Google Storage Bucket: gs" "$REPOSITORY_KEY" false false false)"
+	fi
+}
+
 function load_password {
 	export RESTIC_PASSWORD="$(get_input "password for new repository" "$PASSWORD_KEY" false true false)"
 	echo
@@ -119,13 +126,14 @@ function load_inclusions {
 	export BACKUP_INCLUDES="$(get_input "included files" "$INCLUDES_ARR_KEY" true false false)"
 	if [ -z "$BACKUP_INCLUDES" ]; then
 		echo "${LOG_PREFIX}: No includes provided."
-		echo -e "\n\e[33mWARNING: If no includes are provided, then ' / ' will be backed up.\e[0m\n" >&2
+		
+		echo -e "\n\e[33mWARNING: If no includes are provided, then ' / ' will be backed up.\e[0m" >&2
+		echo -e "\e[33mWARNING: Only the current filesystem is backed up by default. Attached filesystems will not be backed up.\e[0m"
+		echo -e "\e[33mThis is including but not limited to attached media, virtual filesystems, and other partitions.\e[0m"
+		echo -e "\e[33mIf you want these to be backed up as well, their directories must be manually included.\e[0m\n" >&2
+		
 		want_includes="$(read_input "Do you want to provide file and/or directory inclusions? (Y/n) ")"
 		if [[ $want_includes =~ ^[Yy] ]]; then
-			echo -e "\nNOTE: Only the current filesystem is backed up by default. Attached filesystems will not be backed up."
-			echo -e "This is including but not limited to attached media, virtual filesystems, and other partitions."
-			echo -e "If you want these to be backed up as well, their directories must be manually included.\n"
-			
 			echo "Please enter each inclusion below. (Press enter again when finished)"
 			
 			local includes=()
@@ -223,7 +231,8 @@ function load_conf {
 	
 	echo "${LOG_PREFIX}: Loading conf file..."
 	export GOOGLE_PROJECT_ID="$(get_input "Google Project ID" "$PROJECT_ID_KEY" false false false)"
-	export RESTIC_REPOSITORY="$(get_input "repository as a Google Storage Bucket: gs" "$REPOSITORY_KEY" false false false)"
+	
+	load_repository
 	load_password
 	
 	load_credentials
@@ -314,16 +323,20 @@ function check {
 	fi
 }
 
+function restic_init {
+	restic init
+}
+
 function init {
 	echo "${LOG_PREFIX}: init"
-	export LOG_PREFIX="backup-init"
+	LOG_PREFIX="backup-init"
 
 	check restic
 	check yq
 	
 	load_conf
 	
-	
+	restic_init
 	
 	echo "RESTIC_REPOSITORY = $RESTIC_REPOSITORY"
 	echo "RESTIC_PASSWORD = $RESTIC_PASSWORD"
@@ -335,7 +348,7 @@ function init {
 	echo "BACKUP_EXCLUDES = $BACKUP_EXCLUDES"
 }
 
-export LOG_PREFIX="backup"
+LOG_PREFIX="backup"
 
 case $COMMAND in
 	init) 
