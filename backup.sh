@@ -1,13 +1,13 @@
 #! /bin/bash
 
-COMMAND=$1
-
 CONF_FILE=/etc/backup.conf
 REPOSITORY_KEY=".backup.restic.repository"
 PASSWORD_KEY=".backup.restic.password"
 PROJECT_ID_KEY=".backup.google.project-id"
 JSON_CREDENTIALS_KEY=".backup.google.credentials"
 ACCESS_TOKEN_KEY=".backup.google.access-token"
+CRON_KEY=".backup.job.cron"
+OUTPUT_CMD_KEY=".backup.job.output-cmd"
 INCLUDES_KEY=".backup.includes"
 INCLUDES_ARR_KEY=".backup.includes[]"
 EXCLUDES_KEY=".backup.excludes"
@@ -63,6 +63,18 @@ function get_input {
 	fi
 	
 	echo "$(trim "$result")"
+}
+
+function load_cron_job {
+	export BACKUP_JOB_CRON="$(get_input "cron for the backup job" "$CRON_KEY" false false false)"
+	
+	export BACKUP_JOB_OUTPUT_CMD="$(get_input "job output command" "$OUTPUT_CMD_KEY" true false true)"
+	if [ -z "$BACKUP_JOB_OUTPUT_CMD" ]; then
+		wants_output_cmd="$(read_input "Do you want to pipe the output of the backup job to a command? (Y/n) ")"
+		if [[ $wants_output_cmd =~ ^[Yy] ]]; then
+			export BACKUP_JOB_OUTPUT_CMD="$(get_input "job output command" "$OUTPUT_CMD_KEY" false false true)"
+		fi
+	fi
 }
 
 function load_repository {
@@ -189,6 +201,7 @@ function update_conf {
 	yq e -i "$PROJECT_ID_KEY = \"$GOOGLE_PROJECT_ID\"" $CONF_FILE || exit $?
 	yq e -i "$REPOSITORY_KEY = \"$RESTIC_REPOSITORY\"" $CONF_FILE || exit $?
 	yq e -i "$PASSWORD_KEY = \"$RESTIC_PASSWORD\"" $CONF_FILE || exit $?
+	yq e -i "$CRON_KEY = \"$BACKUP_JOB_CRON\"" $CONF_FILE || exit $?
 	
 	if [ ! -z "$JSON_CREDENTIALS_FILE" ]; then
 		yq e -i "$JSON_CREDENTIALS_KEY = \"$JSON_CREDENTIALS_FILE\"" $CONF_FILE || exit $?
@@ -196,6 +209,10 @@ function update_conf {
 	
 	if [ ! -z "$GOOGLE_ACCESS_TOKEN" ]; then
 		yq e -i "$ACCESS_TOKEN_KEY = \"$GOOGLE_ACCESS_TOKEN\"" $CONF_FILE || exit $?
+	fi
+	
+	if [ ! -z "$BACKUP_JOB_OUTPUT_CMD" ]; then
+		yq e -i "$OUTPUT_CMD_KEY = \"$BACKUP_JOB_OUTPUT_CMD\"" $CONF_FILE || exit $?
 	fi
 	
 	if $LOADED_INCLUDES ; then
@@ -231,6 +248,8 @@ function load_conf {
 	
 	echo "${LOG_PREFIX}: Loading conf file..."
 	export GOOGLE_PROJECT_ID="$(get_input "Google Project ID" "$PROJECT_ID_KEY" false false false)"
+	
+	load_cron_job
 	
 	load_repository
 	load_password
@@ -324,7 +343,46 @@ function check {
 }
 
 function restic_init {
-	restic init
+	echo "${LOG_PREFIX}: Initializing restic repository..."
+	restic init || exit $?
+	echo "${LOG_PREFIX}: init done."
+}
+
+function restic_backup {
+	echo "${LOG_PREFIX}: Backing up to restic repository..."
+	local includes=()
+	local excludes=()
+	
+	for include in $BACKUP_INCLUDES; do
+		local includes+=("$include")
+	done
+	
+	for exclude in $BACKUP_EXCLUDES; do
+		local excludes+=("-e")
+		local excludes+=("$exclude")
+	done
+	
+	local IFS=" "
+	restic -v backup \
+		-x \
+		"${includes[@]}" \
+		"${excludes[@]}" \
+		|| exit $?
+	
+	echo "${LOG_PREFIX}: backup done."
+}
+
+function add_cron_job {
+	echo "${LOG_PREFIX}: Adding cron job..."
+	if [ -z "$BACKUP_JOB_OUTPUT_CMD" ]; then
+		local cron_str="$BACKUP_JOB_CRON $CRON_CMD"
+	else
+		local cron_str="$BACKUP_JOB_CRON $CRON_CMD | $BACKUP_JOB_OUTPUT_CMD"
+	fi
+	
+	(eval $SUDO crontab -l 2> /dev/null ; echo "$cron_str") | eval $SUDO crontab - || exit $?
+	
+	echo "${LOG_PREFIX}: done."
 }
 
 function init {
@@ -338,21 +396,65 @@ function init {
 	
 	restic_init
 	
+	local wants_cron_job="$(read_input "Do you want to schedule the backup job now? (Y/n) ")"
+	if [[ $wants_cron_job =~ ^[Yy] ]]; then
+		add_cron_job
+	fi
+}
+
+function start {
+	echo "${LOG_PREFIX}: start"
+	LOG_PREFIX="backup-start"
+	
+	check restic
+	check yq
+	
+	load_conf
+	
+	restic_backup
+}
+
+function schedule {
+	echo "${LOG_PREFIX}: schedule"
+	LOG_PREFIX="backup-schedule"
+	
+	check yq
+	
+	load_conf
+	
+	add_cron_job
+	
 	echo "RESTIC_REPOSITORY = $RESTIC_REPOSITORY"
 	echo "RESTIC_PASSWORD = $RESTIC_PASSWORD"
 	echo "GOOGLE_PROJECT_ID = $GOOGLE_PROJECT_ID"
 	echo "JSON_CREDENTIALS_FILE = $JSON_CREDENTIALS_FILE"
 	echo "GOOGLE_APPLICATION_CREDENTIALS = $GOOGLE_APPLICATION_CREDENTIALS"
 	echo "GOOGLE_ACCESS_TOKEN = $GOOGLE_ACCESS_TOKEN"
+	echo "BACKUP_JOB_CRON = $BACKUP_JOB_CRON"
+	echo "BACKUP_JOB_OUTPUT_CMD = $BACKUP_JOB_OUTPUT_CMD"
 	echo "BACKUP_INCLUDES = $BACKUP_INCLUDES"
 	echo "BACKUP_EXCLUDES = $BACKUP_EXCLUDES"
 }
 
+if [ -f "$0" ]; then
+	SCRIPT="$(realpath "$0")"
+else
+	SCRIPT="$0"
+fi
+CRON_CMD="$SCRIPT start 2>&1"
+
+COMMAND=$1
 LOG_PREFIX="backup"
 
 case $COMMAND in
 	init) 
 		init
+		;;
+	start)
+		start
+		;;
+	schedule)
+		schedule
 		;;
 	*)
 		echo "${LOG_PREFIX}: error: \"$COMMAND\" is not a known command."  >&2
