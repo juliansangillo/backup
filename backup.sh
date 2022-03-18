@@ -461,6 +461,16 @@ function unschedule {
 	rm_cron_job
 }
 
+function conf_path() {
+	if [ ! -f $CONF_FILE ]; then
+		echo "no conf file exists" >&2
+		return 1
+	fi
+	
+	echo "$CONF_FILE"
+	return 0
+}
+
 if [ -f "$0" ]; then
 	SCRIPT="$(realpath "$0")"
 else
@@ -474,6 +484,10 @@ while (( $# )); do
 		-v|--version)
 			echo "$VERSION_INFO"
 			exit 0
+			;;
+		-c|--conf)
+			conf_path
+			exit $?
 			;;
 		*)
 			ARGS+=($1)
