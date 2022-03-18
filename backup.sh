@@ -1,5 +1,8 @@
 #! /bin/bash
 
+VERSION=1.0
+VERSION_INFO="backup version $VERSION"
+
 CONF_FILE=/etc/backup.conf
 REPOSITORY_KEY=".backup.restic.repository"
 PASSWORD_KEY=".backup.restic.password"
@@ -465,7 +468,21 @@ else
 fi
 CRON_CMD="$SCRIPT start 2>&1"
 
-COMMAND=$1
+ARGS=()
+while (( $# )); do
+	case $1 in
+		-v|--version)
+			echo "$VERSION_INFO"
+			exit 0
+			;;
+		*)
+			ARGS+=($1)
+			shift
+			;;
+	esac
+done
+
+COMMAND=${ARGS[0]}
 LOG_PREFIX="backup"
 
 case $COMMAND in
