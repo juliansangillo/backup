@@ -385,6 +385,10 @@ function add_cron_job {
 	echo "${LOG_PREFIX}: done."
 }
 
+function show_cron_job {
+	eval $SUDO crontab -l 2> /dev/null | grep "$CRON_CMD"
+}
+
 function init {
 	echo "${LOG_PREFIX}: init"
 	LOG_PREFIX="backup-init"
@@ -415,6 +419,11 @@ function start {
 }
 
 function schedule {
+	if [ ! -z "$(show_cron_job)" ]; then
+		echo "${LOG_PREFIX}: error: backup job already exists."  >&2
+		exit 3
+	fi
+
 	echo "${LOG_PREFIX}: schedule"
 	LOG_PREFIX="backup-schedule"
 	
