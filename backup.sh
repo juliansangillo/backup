@@ -431,7 +431,7 @@ function start {
 
 function schedule {
 	if [ ! -z "$(show_cron_job)" ]; then
-		echo "${LOG_PREFIX}: error: backup job already exists."  >&2
+		echo "backup-schedule: error: backup job already exists."  >&2
 		exit 3
 	fi
 
@@ -451,7 +451,7 @@ function show {
 
 function unschedule {
 	if [ -z "$(show_cron_job)" ]; then
-		echo "${LOG_PREFIX}: error: backup job doesn't exist."  >&2
+		echo "backup-unschedule: error: backup job doesn't exist."  >&2
 		exit 3
 	fi
 	
@@ -459,6 +459,23 @@ function unschedule {
 	LOG_PREFIX="backup-unschedule"
 	
 	rm_cron_job
+}
+
+function reschedule {
+	if [ -z "$(show_cron_job)" ]; then
+		echo "backup-reschedule: error: backup job doesn't exist."  >&2
+		exit 3
+	fi
+
+	echo "${LOG_PREFIX}: reschedule"
+	LOG_PREFIX="backup-reschedule"
+	
+	check yq
+	
+	load_conf
+	
+	rm_cron_job
+	add_cron_job
 }
 
 function conf_path {
@@ -526,6 +543,9 @@ case $COMMAND in
 		;;
 	unschedule)
 		unschedule
+		;;
+	reschedule)
+		reschedule
 		;;
 	*)
 		echo "${LOG_PREFIX}: error: \"$COMMAND\" is not a known command."  >&2
