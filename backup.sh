@@ -461,7 +461,7 @@ function unschedule {
 	rm_cron_job
 }
 
-function conf_path() {
+function conf_path {
 	if [ ! -f $CONF_FILE ]; then
 		echo "no conf file exists" >&2
 		return 1
@@ -469,6 +469,14 @@ function conf_path() {
 	
 	echo "$CONF_FILE"
 	return 0
+}
+
+function conf_edit {
+	if command -v vim &> /dev/null ; then
+		vim -c 'set syntax=yaml' $CONF_FILE
+	else
+		vi $CONF_FILE
+	fi
 }
 
 if [ -f "$0" ]; then
@@ -488,6 +496,10 @@ while (( $# )); do
 		-c|--conf)
 			conf_path
 			exit $?
+			;;
+		-e|--edit)
+			conf_edit
+			exit 0
 			;;
 		*)
 			ARGS+=($1)
