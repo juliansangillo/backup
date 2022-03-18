@@ -445,6 +445,10 @@ function schedule {
 	echo "BACKUP_EXCLUDES = $BACKUP_EXCLUDES"
 }
 
+function show {
+	show_cron_job
+}
+
 if [ -f "$0" ]; then
 	SCRIPT="$(realpath "$0")"
 else
@@ -464,6 +468,9 @@ case $COMMAND in
 		;;
 	schedule)
 		schedule
+		;;
+	show)
+		show
 		;;
 	*)
 		echo "${LOG_PREFIX}: error: \"$COMMAND\" is not a known command."  >&2
