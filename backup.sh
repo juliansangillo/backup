@@ -389,6 +389,14 @@ function show_cron_job {
 	eval $SUDO crontab -l 2> /dev/null | grep "$CRON_CMD"
 }
 
+function rm_cron_job {
+	echo "${LOG_PREFIX}: Removing cron job..."
+	
+	eval $SUDO crontab -l 2> /dev/null | grep -v "$CRON_CMD" | eval $SUDO crontab - || exit $?
+	
+	echo "${LOG_PREFIX}: done."
+}
+
 function init {
 	echo "${LOG_PREFIX}: init"
 	LOG_PREFIX="backup-init"
@@ -432,21 +440,22 @@ function schedule {
 	load_conf
 	
 	add_cron_job
-	
-	echo "RESTIC_REPOSITORY = $RESTIC_REPOSITORY"
-	echo "RESTIC_PASSWORD = $RESTIC_PASSWORD"
-	echo "GOOGLE_PROJECT_ID = $GOOGLE_PROJECT_ID"
-	echo "JSON_CREDENTIALS_FILE = $JSON_CREDENTIALS_FILE"
-	echo "GOOGLE_APPLICATION_CREDENTIALS = $GOOGLE_APPLICATION_CREDENTIALS"
-	echo "GOOGLE_ACCESS_TOKEN = $GOOGLE_ACCESS_TOKEN"
-	echo "BACKUP_JOB_CRON = $BACKUP_JOB_CRON"
-	echo "BACKUP_JOB_OUTPUT_CMD = $BACKUP_JOB_OUTPUT_CMD"
-	echo "BACKUP_INCLUDES = $BACKUP_INCLUDES"
-	echo "BACKUP_EXCLUDES = $BACKUP_EXCLUDES"
 }
 
 function show {
 	show_cron_job
+}
+
+function unschedule {
+	if [ -z "$(show_cron_job)" ]; then
+		echo "${LOG_PREFIX}: error: backup job doesn't exist."  >&2
+		exit 3
+	fi
+	
+	echo "${LOG_PREFIX}: unschedule"
+	LOG_PREFIX="backup-unschedule"
+	
+	rm_cron_job
 }
 
 if [ -f "$0" ]; then
@@ -471,6 +480,9 @@ case $COMMAND in
 		;;
 	show)
 		show
+		;;
+	unschedule)
+		unschedule
 		;;
 	*)
 		echo "${LOG_PREFIX}: error: \"$COMMAND\" is not a known command."  >&2
