@@ -414,6 +414,16 @@ function init {
 	local wants_cron_job="$(read_input "Do you want to schedule the backup job now? (Y/n) ")"
 	if [[ $wants_cron_job =~ ^[Yy] ]]; then
 		add_cron_job
+	else
+		echo "run '$SCRIPT schedule' to schedule the backup job when ready."
+	fi
+	
+	local wants_initial_backup="$(read_input "Do you want to start the initial backup now? (This will take a lot of time to complete) (Y/n) ")"
+	if [[ $wants_initial_backup =~ ^[Yy] ]]; then
+		exec 5>&1
+		restic_backup 2>&1 | tee >(cat - >&5) | eval $BACKUP_JOB_OUTPUT_CMD || exit $?
+	else
+		echo "run '$SCRIPT start' when ready to start the initial backup, or wait until backup job runs if one is scheduled."
 	fi
 }
 
