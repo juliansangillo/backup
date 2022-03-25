@@ -209,7 +209,6 @@ function load_keep_last {
 function update_conf {
 	echo "${LOG_PREFIX}: Updating conf file..."
 	
-	yq e -i "$KEEP_LAST_KEY = \"$KEEP_LAST\"" $CONF_FILE || exit $?
 	yq e -i "$PROJECT_ID_KEY = \"$GOOGLE_PROJECT_ID\"" $CONF_FILE || exit $?
 	yq e -i "$REPOSITORY_KEY = \"$RESTIC_REPOSITORY\"" $CONF_FILE || exit $?
 	yq e -i "$PASSWORD_KEY = \"$RESTIC_PASSWORD\"" $CONF_FILE || exit $?
@@ -225,6 +224,12 @@ function update_conf {
 	
 	if [ ! -z "$BACKUP_JOB_OUTPUT_CMD" ]; then
 		yq e -i "$OUTPUT_CMD_KEY = \"$BACKUP_JOB_OUTPUT_CMD\"" $CONF_FILE || exit $?
+	fi
+	
+	if [[ $KEEP_LAST =~ ^[0-9]+$ ]]; then
+		yq e -i "$KEEP_LAST_KEY = $KEEP_LAST" $CONF_FILE || exit $?
+	else
+		yq e -i "$KEEP_LAST_KEY = \"$KEEP_LAST\"" $CONF_FILE || exit $?
 	fi
 	
 	if $LOADED_INCLUDES ; then
@@ -270,8 +275,6 @@ function load_conf {
 	
 	load_keep_last
 	echo "${LOG_PREFIX}: $CONF_FILE was loaded."
-	
-	update_conf
 }
 
 function restic_init {
@@ -299,6 +302,7 @@ function restic_backup {
 		-x \
 		"${includes[@]}" \
 		"${excludes[@]}" \
+		-e $CONF_FILE \
 		|| exit $?
 	
 	echo "${LOG_PREFIX}: backup done."
@@ -321,8 +325,16 @@ function restic_check {
 	echo "${LOG_PREFIX}: all green."
 }
 
+function restic_restore {
+	echo "${LOG_PREFIX}: Restoring from restic repository..."
+	local snapshot=$1
+	eval $SUDO restic restore $snapshot --target /
+	echo "${LOG_PREFIX}: restore done."
+}
+
 function add_cron_job {
 	load_cron_job
+	update_conf
 	
 	echo "${LOG_PREFIX}: Adding cron job..."
 	if [ -z "$BACKUP_JOB_OUTPUT_CMD" ]; then
@@ -370,6 +382,7 @@ function init {
 		add_cron_job
 	else
 		echo "run '$SCRIPT schedule' to schedule the backup job when ready."
+		update_conf
 	fi
 }
 
@@ -378,6 +391,7 @@ function start {
 	LOG_PREFIX="backup-start"
 	
 	load_conf
+	update_conf
 	
 	restic_backup
 	restic_prune
@@ -424,9 +438,26 @@ function reschedule {
 	LOG_PREFIX="backup-reschedule"
 	
 	load_conf
+	update_conf
 	
 	rm_cron_job
 	add_cron_job
+}
+
+#Finish Restore process
+#Add Snapshots process
+#Add quiet mode global flag
+#Add help page
+#Refactor yq e to yq
+function restore {
+	echo "${LOG_PREFIX}: restore"
+	LOG_PREFIX="backup-restore"
+	
+	load_conf
+	update_conf
+	
+	#local snapshot=latest
+	#if []
 }
 
 function conf_path {

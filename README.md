@@ -105,6 +105,7 @@ backup:
     job:
         cron: 0 2 * * *
         output-cmd: mail #optional
+	keep: 10
 ```
 NOTE: This is only an example and you are expected to change it to meet your requirements. Fields that are optional are marked as optional. Inclusions have to be there, even if the only included directory is root. This tool will only backup the current filesystem. If there are mounted filesystems or separate partitions that you want to backup as well, then they have to be listed separately. For example, if home and usr are separate partitions here, then everything in root that is on the same filesystem and /home is backed up, but /usr isn't backed up because it is not included.
 
