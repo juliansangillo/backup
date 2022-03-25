@@ -4,6 +4,7 @@ VERSION=1.0
 VERSION_INFO="backup version $VERSION"
 
 CONF_FILE=/etc/backup.conf
+KEEP_LAST_KEY=".backup.keep"
 REPOSITORY_KEY=".backup.restic.repository"
 PASSWORD_KEY=".backup.restic.password"
 PROJECT_ID_KEY=".backup.google.project-id"
@@ -198,9 +199,17 @@ function load_exclusions {
 	fi
 }
 
+function load_keep_last {
+	export KEEP_LAST="$(get_input "keep" "$KEEP_LAST_KEY" true false false)"
+	if [ -z "$KEEP_LAST" ]; then
+		export KEEP_LAST="$(read_input 'How many backups do you wish to keep? (old backups and their data will be deleted) (enter * to keep all) ')"
+	fi
+}
+
 function update_conf {
 	echo "${LOG_PREFIX}: Updating conf file..."
 	
+	yq e -i "$KEEP_LAST_KEY = \"$KEEP_LAST\"" $CONF_FILE || exit $?
 	yq e -i "$PROJECT_ID_KEY = \"$GOOGLE_PROJECT_ID\"" $CONF_FILE || exit $?
 	yq e -i "$REPOSITORY_KEY = \"$RESTIC_REPOSITORY\"" $CONF_FILE || exit $?
 	yq e -i "$PASSWORD_KEY = \"$RESTIC_PASSWORD\"" $CONF_FILE || exit $?
@@ -252,14 +261,14 @@ function load_conf {
 	echo "${LOG_PREFIX}: Loading conf file..."
 	export GOOGLE_PROJECT_ID="$(get_input "Google Project ID" "$PROJECT_ID_KEY" false false false)"
 	
-	load_cron_job
-	
 	load_repository
 	load_password
 	
 	load_credentials
 	load_inclusions
 	load_exclusions
+	
+	load_keep_last
 	echo "${LOG_PREFIX}: $CONF_FILE was loaded."
 	
 	update_conf
@@ -295,7 +304,26 @@ function restic_backup {
 	echo "${LOG_PREFIX}: backup done."
 }
 
+function restic_prune {
+	if [ $KEEP_LAST != * ]; then
+		echo "${LOG_PREFIX}: Pruning old backups..."
+		restic -v forget \
+			--prune \
+			--keep-last $KEEP_LAST \
+			|| exit $?
+		echo "${LOG_PREFIX}: prune done."
+	fi
+}
+
+function restic_check {
+	echo "${LOG_PREFIX}: Checking repository health..."
+	restic -v check || exit $?
+	echo "${LOG_PREFIX}: all green."
+}
+
 function add_cron_job {
+	load_cron_job
+	
 	echo "${LOG_PREFIX}: Adding cron job..."
 	if [ -z "$BACKUP_JOB_OUTPUT_CMD" ]; then
 		local cron_str="$BACKUP_JOB_CRON $CRON_CMD"
@@ -324,23 +352,24 @@ function init {
 	echo "${LOG_PREFIX}: init"
 	LOG_PREFIX="backup-init"
 	
+	local wants_initial_backup="$(read_input "Do you also want to start the initial backup? (Once started, this will take a lot of time to complete) (Y/n) ")"
+	local wants_cron_job="$(read_input "Do you also want to schedule a regular backup? (Y/n) ")"
+	
 	load_conf
 	
 	restic_init
 	
-	local wants_cron_job="$(read_input "Do you want to schedule the backup job now? (Y/n) ")"
-	if [[ $wants_cron_job =~ ^[Yy] ]]; then
-		add_cron_job
-	else
-		echo "run '$SCRIPT schedule' to schedule the backup job when ready."
-	fi
-	
-	local wants_initial_backup="$(read_input "Do you want to start the initial backup now? (This will take a lot of time to complete) (Y/n) ")"
 	if [[ $wants_initial_backup =~ ^[Yy] ]]; then
 		exec 5>&1
 		restic_backup 2>&1 | tee >(cat - >&5) | eval $BACKUP_JOB_OUTPUT_CMD || exit $?
 	else
 		echo "run '$SCRIPT start' when ready to start the initial backup, or wait until backup job runs if one is scheduled."
+	fi
+	
+	if [[ $wants_cron_job =~ ^[Yy] ]]; then
+		add_cron_job
+	else
+		echo "run '$SCRIPT schedule' to schedule the backup job when ready."
 	fi
 }
 
@@ -351,6 +380,8 @@ function start {
 	load_conf
 	
 	restic_backup
+	restic_prune
+	restic_check
 }
 
 function schedule {
