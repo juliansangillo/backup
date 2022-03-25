@@ -86,8 +86,8 @@ The conf file is in yaml format and is placed at the path returned by `backup -c
 backup:
     google:
         project-id: my-google-project
-        credentials: /home/user/.config/backup.json
-        access-token: some_gcloud_access_token
+        credentials: /home/user/.config/backup.json #required only if no access token
+        access-token: some_gcloud_access_token #required only if no json credentials
     restic:
         repository: gs:my-google-backup-bucket:/
         password: my_random_password
