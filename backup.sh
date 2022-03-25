@@ -265,86 +265,6 @@ function load_conf {
 	update_conf
 }
 
-function needs_updating {
-	local command=$1
-	local major_version=$2
-	local latest_version=$3
-	local current_version=$4
-	
-	local IFS='.'
-	read -r -a latest_array <<< "$latest_version"
-	read -r -a current_array <<< "$current_version"
-	
-	needs_updating=false
-	if [ ${current_array[0]} -gt $major_version ]; then
-		echo -e "\n\e[33mWARNING: current $command version is greater than '$major_version.x'. Only $major_version.x versions are\e[0m" >&2
-		echo -e "\e[33msupported at this time. This may cause instability.\e[0m\n" >&2
-	else
-		for i in "${!latest_array[@]}"; do
-			if [ ${latest_array[i]} -gt ${current_array[i]} ]; then 
-				needs_updating=true
-				break
-			fi
-		done
-	fi
-	
-	echo $needs_updating
-}
-
-function restic_needs_updating {
-	local latest="$(apt-cache madison restic | sed -rn "s/.*(${RESTIC_MAJOR_VERSION}\.[0-9]+\.[0-9]+).*/\1/p" | head -n 1)"
-	local current="$(restic version | sed -rn "s/.*[ ]([0-9]+\.[0-9]+\.[0-9]+)[ ].*/\1/p")"
-	
-	echo $(needs_updating restic $RESTIC_MAJOR_VERSION $latest $current)
-}
-
-function install_restic {
-	local latest_version="$(apt-cache madison restic | sed -rn "s/.*(${RESTIC_MAJOR_VERSION}\.[0-9]+\.[0-9]+[^ ]*).*/\1/p" | head -n 1)"
-
-	eval $SUDO apt-get update
-	eval $SUDO apt-get install restic=$latest_version
-}
-
-function update_restic {
-	install_restic
-}
-
-function yq_needs_updating {
-	local latest="$(curl -s -X GET -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/mikefarah/yq/releases | grep -w tag_name | sed -rn "s/.*(${YQ_MAJOR_VERSION}\.[0-9]+\.[0-9]+).*/\1/p" | head -n 1)"
-	local current="$(yq -V | sed -rn "s/.*([0-9]+\.[0-9]+\.[0-9]+).*/\1/p")"
-	
-	echo $(needs_updating yq $YQ_MAJOR_VERSION $latest $current)
-}
-
-function install_yq {
-	local latest_version="$(curl -s -X GET -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/mikefarah/yq/releases | grep -w tag_name | sed -rn "s/.*(${YQ_MAJOR_VERSION}\.[0-9]+\.[0-9]+).*/\1/p" | head -n 1)"
-	
-	eval $SUDO wget https://github.com/mikefarah/yq/releases/download/v${latest_version}/yq_linux_amd64.tar.gz -O - | tar xz && mv yq_linux_amd64 /usr/bin/yq || exit $?
-	./install-man-page.sh
-	rm install-man-page.sh
-	rm yq.1
-}
-
-function update_yq {
-	install_yq
-}
-
-function check {
-	local command=$1
-	
-	if ! command -v $command	&> /dev/null ; then
-		echo "${LOG_PREFIX}: $command could not be found. Installing..."
-		install_${command}
-		echo "${LOG_PREFIX}: $command is now installed."
-	elif "$(${command}_needs_updating)" ; then
-		echo "${LOG_PREFIX}: $command out of date. Updating..."
-		update_${command}
-		echo "${LOG_PREFIX}: $command is now updated."
-	else
-		echo "${LOG_PREFIX}: $command already exists and is up-to-date."
-	fi
-}
-
 function restic_init {
 	echo "${LOG_PREFIX}: Initializing restic repository..."
 	restic init || exit $?
@@ -403,9 +323,6 @@ function rm_cron_job {
 function init {
 	echo "${LOG_PREFIX}: init"
 	LOG_PREFIX="backup-init"
-
-	check restic
-	check yq
 	
 	load_conf
 	
@@ -431,9 +348,6 @@ function start {
 	echo "${LOG_PREFIX}: start"
 	LOG_PREFIX="backup-start"
 	
-	check restic
-	check yq
-	
 	load_conf
 	
 	restic_backup
@@ -447,8 +361,6 @@ function schedule {
 
 	echo "${LOG_PREFIX}: schedule"
 	LOG_PREFIX="backup-schedule"
-	
-	check yq
 	
 	load_conf
 	
@@ -479,8 +391,6 @@ function reschedule {
 
 	echo "${LOG_PREFIX}: reschedule"
 	LOG_PREFIX="backup-reschedule"
-	
-	check yq
 	
 	load_conf
 	
