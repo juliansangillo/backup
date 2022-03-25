@@ -124,13 +124,9 @@ sudo wget https://github.com/mikefarah/yq/releases/download/${VERSION}/yq_linux_
     sudo tar xz && sudo mv yq_linux_amd64 /usr/bin/yq
 ```
 ```bash
-./install-man-page.sh
-```
-```bash
-rm install-man-page.sh
-```
-```bash
-rm yq.1
+./install-man-page.sh && \
+    rm install-man-page.sh && \
+	rm yq.1
 ```
 
 ## Install
