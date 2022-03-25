@@ -2,20 +2,19 @@
 Back up an entire linux system to google cloud storage.
 1. [Usages](#usages)
 2. [Commands](#commands)
-3. [Init](#init)
-4. [Start](#start)
-5. [Schedule](#schedule)
-6. [Show](#show)
-7. [Unschedule](#unschedule)
-8. [Reschedule](#reschedule)
-9. [Snapshots](#snapshots)
-10. [Restore](#restore)
-11. [Conf Example](#conf-example)
-12. [Dependencies](#dependencies)
-13. [restic](#restic)
-14. [mikefarah yq](#mikefarah-yq)
-
-
+    1. [Init](#init)
+    2. [Start](#start)
+    3. [Schedule](#schedule)
+    4. [Show](#show)
+    5. [Unschedule](#unschedule)
+    6. [Reschedule](#reschedule)
+    7. [Snapshots](#snapshots)
+    8. [Restore](#restore)
+3. [Conf Example](#conf-example)
+4. [Dependencies](#dependencies)
+    1. [restic](#restic)
+    2. [mikefarah yq](#mikefarah-yq)
+5. [Install](#install)
 
 ## Usages
 ```bash
@@ -85,26 +84,26 @@ This will restore your system using one of the saved snapshots. Use `backup snap
 The conf file is in yaml format and is placed at the path returned by `backup -c`.
 ```yaml
 backup:
-	google:
-		project-id: my-google-project
-		credentials: /home/user/.config/backup.json
-	restic:
-		repository: gs:my-google-backup-bucket:/
-		password: my_random_password
-	includes:
-		- /
-		- /home
-	excludes: #optional
-		- .*/.cache/.*
-		- .*/.local/share/gvfs-metadata/.*
-		- .*/.local/share/Trash/.*
-		- .*/.local/share/Steam/steamapps/.*
-		- .*/.xsession-errors
-		- .*/tmp/.*
-		- .*/temp/.*
-	job:
-		cron: 0 2 * * *
-		output-cmd: mail #optional
+    google:
+        project-id: my-google-project
+        credentials: /home/user/.config/backup.json
+    restic:
+        repository: gs:my-google-backup-bucket:/
+        password: my_random_password
+    includes:
+        - /
+        - /home
+    excludes: #optional
+        - .*/.cache/.*
+        - .*/.local/share/gvfs-metadata/.*
+        - .*/.local/share/Trash/.*
+        - .*/.local/share/Steam/steamapps/.*
+        - .*/.xsession-errors
+        - .*/tmp/.*
+        - .*/temp/.*
+    job:
+        cron: 0 2 * * *
+        output-cmd: mail #optional
 ```
 NOTE: This is only an example and you are expected to change it to meet your requirements. Fields that are optional are marked as optional. Inclusions have to be there, even if the only included directory is root. This tool will only backup the current filesystem. If there are mounted filesystems or separate partitions that you want to backup as well, then they have to be listed separately. For example, if home and usr are separate partitions here, then everything in root that is on the same filesystem and /home is backed up, but /usr isn't backed up because it is not included.
 
@@ -114,18 +113,23 @@ These must be installed before using this tool.
 ### restic
 This is used as the backend for handling the backup operations. For more information, please see the restic documentation [here](https://restic.readthedocs.io/en/stable/index.html).
 ```bash
-apt install restic
+sudo apt install restic
 ```
 
 ### mikefarah yq
 Used for yaml parsing with the conf file. For more information and the published versions, please see the yq github [here](https://github.com/mikefarah/yq).
 ```bash
-wget https://github.com/mikefarah/yq/releases/download/${VERSION}/yq_linux_amd64.tar.gz -O - |\
-	tar xz && mv yq_linux_amd64 /usr/bin/yq
+sudo wget https://github.com/mikefarah/yq/releases/download/${VERSION}/yq_linux_amd64.tar.gz -O - |\
+    sudo tar xz && sudo mv yq_linux_amd64 /usr/bin/yq
 ./install-man-page.sh
 rm install-man-page.sh
 rm yq.1
 ```
 
-
-
+## Install
+To install, please install the dependencies above, then run the command below:
+```bash
+sudo wget https://github.com/juliansangillo/backup/releases/download/${VERSION}/backup.sh \
+    && sudo chmod +x backup.sh \
+    && sudo mv backup.sh /bin/backup
+```
