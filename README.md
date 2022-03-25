@@ -122,8 +122,14 @@ Used for yaml parsing with the conf file. For more information and the published
 ```bash
 sudo wget https://github.com/mikefarah/yq/releases/download/${VERSION}/yq_linux_amd64.tar.gz -O - |\
     sudo tar xz && sudo mv yq_linux_amd64 /usr/bin/yq
+```
+```bash
 ./install-man-page.sh
+```
+```bash
 rm install-man-page.sh
+```
+```bash
 rm yq.1
 ```
 
