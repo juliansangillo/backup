@@ -87,7 +87,7 @@ backup:
     google:
         project-id: my-google-project
         credentials: /home/user/.config/backup.json
-		access-token: some_gcloud_access_token
+        access-token: some_gcloud_access_token
     restic:
         repository: gs:my-google-backup-bucket:/
         password: my_random_password
