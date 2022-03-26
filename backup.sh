@@ -444,7 +444,6 @@ function reschedule {
 	add_cron_job
 }
 
-#Finish Restore process
 #Add Snapshots process
 #Add quiet mode global flag
 #Add help page
@@ -452,12 +451,26 @@ function reschedule {
 function restore {
 	echo "${LOG_PREFIX}: restore"
 	LOG_PREFIX="backup-restore"
+
+	local snapshot=latest
+	while (( $# )); do
+		case $1 in
+			-s|--snapshot)
+				if [ ! -z $2 ]; then
+					local snapshot=$2
+					shift 2
+				else
+					echo "${LOG_PREFIX}: error: \"$1\" is missing an argument."  >&2
+					exit 4
+				fi
+				;;
+		esac
+	done
 	
 	load_conf
 	update_conf
 	
-	#local snapshot=latest
-	#if []
+	restic_restore $snapshot
 }
 
 function conf_path {
@@ -485,7 +498,6 @@ else
 fi
 CRON_CMD="$SCRIPT start 2>&1"
 
-ARGS=()
 while (( $# )); do
 	case $1 in
 		-v|--version)
@@ -501,13 +513,13 @@ while (( $# )); do
 			exit 0
 			;;
 		*)
-			ARGS+=($1)
+			COMMAND=$1
 			shift
+			break
 			;;
 	esac
 done
 
-COMMAND=${ARGS[0]}
 LOG_PREFIX="backup"
 
 case $COMMAND in
@@ -528,6 +540,9 @@ case $COMMAND in
 		;;
 	reschedule)
 		reschedule
+		;;
+	restore)
+		restore $@
 		;;
 	*)
 		echo "${LOG_PREFIX}: error: \"$COMMAND\" is not a known command."  >&2
