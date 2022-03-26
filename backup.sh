@@ -325,10 +325,14 @@ function restic_check {
 	echo "${LOG_PREFIX}: all green."
 }
 
+function restic_snapshots {
+	restic -v snapshots || exit $?
+}
+
 function restic_restore {
 	echo "${LOG_PREFIX}: Restoring from restic repository..."
 	local snapshot=$1
-	eval $SUDO restic restore $snapshot --target /
+	eval $SUDO restic restore $snapshot --target / || exit $?
 	echo "${LOG_PREFIX}: restore done."
 }
 
@@ -444,7 +448,13 @@ function reschedule {
 	add_cron_job
 }
 
-#Add Snapshots process
+function snapshots {
+	load_conf
+	update_conf
+	
+	restic_snapshots
+}
+
 #Add quiet mode global flag
 #Add help page
 #Refactor yq e to yq
@@ -540,6 +550,9 @@ case $COMMAND in
 		;;
 	reschedule)
 		reschedule
+		;;
+	snapshots)
+		snapshots
 		;;
 	restore)
 		restore $@
