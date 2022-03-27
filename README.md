@@ -124,13 +124,14 @@ sudo apt install restic
 ### mikefarah yq
 Used for yaml parsing with the conf file. For more information and the published versions, please see the yq github [here](https://github.com/mikefarah/yq).
 ```bash
-sudo wget https://github.com/mikefarah/yq/releases/download/${VERSION}/yq_linux_amd64.tar.gz -O - |\
+sudo wget \
+    https://github.com/mikefarah/yq/releases/download/${VERSION}/yq_linux_amd64.tar.gz -O - |\
     sudo tar xz && sudo mv yq_linux_amd64 /usr/bin/yq
 ```
 ```bash
 sudo ./install-man-page.sh && \
     sudo rm install-man-page.sh && \
-	sudo rm yq.1
+    sudo rm yq.1
 ```
 
 ## Install
