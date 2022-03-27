@@ -17,269 +17,80 @@ INCLUDES_ARR_KEY=".backup.includes[]"
 EXCLUDES_KEY=".backup.excludes"
 EXCLUDES_ARR_KEY=".backup.excludes[]"
 
-RESTIC_MAJOR_VERSION=0
-YQ_MAJOR_VERSION=4
-
 IFS=$'\n'
 
-if [ $EUID -ne 0 ]; then
-    SUDO='sudo -p "Password for $USER: "'
-fi
+PROMPT="Password for $USER: "
+
+function update_prefix {
+	LOG_PREFIX="$1"
+	export SUDO_PROMPT="$1: $PROMPT"
+}
+
+function run {
+	if $DRY_RUN ; then
+		echo + $@
+	else
+		$@
+	fi
+}
 
 function trim {
 	local str="$1"
 	
-	echo "$str" | sed 's/^ *//g' | sed 's/ *$//g'
+	echo "$str" | sed '/^[[:space:]]*$/d' | sed 's/^ *//g' | sed 's/ *$//g'
 }
 
-function read_input {
-	local result=""
-	local prompt="$1"
-	local flags="$2"
-	
-	read -p "$prompt" ${flags[@]} result
-	
-	echo "$(trim "$result")"
-}
-
-function get_input {
-	local input="$1"
-	local expression="$2"
-	local optional=$3
-	local silent=$4
-	local readline=$5 #this is for autocompleting paths
-	
-	local flags=()
-	if $silent ; then
-		flags+=("-s")
-	fi
-	if $readline ; then
-		flags+=("-e")
-	fi
+function load_conf_value {
+	local expression=$1
 	
 	local result="$(yq e "$expression" $CONF_FILE)"
 	if [ "$result" == "null" ]; then
 		local result=""
 	fi
 	
-	if ! $optional && [ -z "$result" ]; then
-		local result="$(read_input "Please enter your $input: " "${flags[@]}")"
-	fi
-	
 	echo "$(trim "$result")"
 }
 
-function load_cron_job {
-	export BACKUP_JOB_CRON="$(get_input "cron for the backup job" "$CRON_KEY" false false false)"
+function update_conf_string {
+	local expression=$1
+	local value="$2"
 	
-	export BACKUP_JOB_OUTPUT_CMD="$(get_input "job output command" "$OUTPUT_CMD_KEY" true false true)"
-	if [ -z "$BACKUP_JOB_OUTPUT_CMD" ]; then
-		wants_output_cmd="$(read_input "Do you want to pipe the output of the backup job to a command? (Y/n) ")"
-		if [[ $wants_output_cmd =~ ^[Yy] ]]; then
-			export BACKUP_JOB_OUTPUT_CMD="$(get_input "job output command" "$OUTPUT_CMD_KEY" false false true)"
-		fi
+	if [ ! -z "$value" ]; then
+		yq e -i "$expression = \"$value\"" $CONF_FILE || exit $?
 	fi
 }
 
-function load_repository {
-	export RESTIC_REPOSITORY="$(get_input "repository as a Google Storage Bucket: gs" "$REPOSITORY_KEY" true false false)"
-	if [ -z "$RESTIC_REPOSITORY" ]; then
-		export RESTIC_REPOSITORY="gs:$(get_input "repository as a Google Storage Bucket: gs" "$REPOSITORY_KEY" false false false)"
+function update_conf_integer {
+	local expression=$1
+	local value="$2"
+	
+	if [ ! -z "$value" ]; then
+		yq e -i "$expression = $value" $CONF_FILE || exit $?
 	fi
 }
 
-function load_password {
-	export RESTIC_PASSWORD="$(get_input "password for new repository" "$PASSWORD_KEY" false true false)"
-	echo
+function update_conf_array {
+	local expression=$1
+	local values="$2"
 	
-	RESTIC_PASSWORD_CONFIRM="$(get_input "password again" "$PASSWORD_KEY" false true false)"
-	echo
-	
-	if [ "$RESTIC_PASSWORD" != "$RESTIC_PASSWORD_CONFIRM" ]; then
-		echo "${LOG_PREFIX}: error: Passwords don't match. Please try again." >&2
-		exit 2
-	fi
-}
-
-function load_credentials {
-	local credentials_file_input="Google Credentials File (json)"
-	local access_token_input="Google Access Token"
-
-	JSON_CREDENTIALS_FILE="$(get_input "$credentials_file_input" "$JSON_CREDENTIALS_KEY" true false false)"
-	export GOOGLE_APPLICATION_CREDENTIALS="`eval echo ${JSON_CREDENTIALS_FILE//>}`"
-	export GOOGLE_ACCESS_TOKEN="$(get_input "$access_token_input" "$ACCESS_TOKEN_KEY" true false false)"
-	if [[ -z "$GOOGLE_APPLICATION_CREDENTIALS" || ! -f "$GOOGLE_APPLICATION_CREDENTIALS" ]]; then
-		if [ -z "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
-			echo "${LOG_PREFIX}: No credentials provided."
-		else
-			echo "${LOG_PREFIX}: Credentials file '$GOOGLE_APPLICATION_CREDENTIALS' does not exist."
-		fi
-		
-		has_credentials="$(read_input "Do you have a JSON Credentials file? (Y/n) ")"
-		if [[ $has_credentials =~ ^[Yy] ]]; then
-			JSON_CREDENTIALS_FILE="$(get_input "$credentials_file_input" "$JSON_CREDENTIALS_KEY" false false true)"
-			export GOOGLE_APPLICATION_CREDENTIALS="`eval echo ${JSON_CREDENTIALS_FILE//>}`"
-			until [ -f "$GOOGLE_APPLICATION_CREDENTIALS" ]; do
-				echo "'$GOOGLE_APPLICATION_CREDENTIALS' does not exist. Verify that the provided path is correct and try again."
-				JSON_CREDENTIALS_FILE="$(read_input "Please enter your ${credentials_file_input}:" "-e")"
-				export GOOGLE_APPLICATION_CREDENTIALS="`eval echo ${JSON_CREDENTIALS_FILE//>}`"
-			done
-		fi
-		
-		if [[ ! $has_credentials =~ ^[Yy] ]]; then
-			echo "${LOG_PREFIX}: Credentials file does not exist. Need access token."
-			JSON_CREDENTIALS_FILE=""
-			export GOOGLE_APPLICATION_CREDENTIALS=""
-			export GOOGLE_ACCESS_TOKEN="$(get_input "$access_token_input" "$ACCESS_TOKEN_KEY" false true false)"
-			echo
-		fi
-	fi
-}
-
-function load_inclusions {
-	export LOADED_INCLUDES=false
-
-	export BACKUP_INCLUDES="$(get_input "included files" "$INCLUDES_ARR_KEY" true false false)"
-	if [ -z "$BACKUP_INCLUDES" ]; then
-		echo "${LOG_PREFIX}: No includes provided."
-		
-		echo -e "\n\e[33mWARNING: If no includes are provided, then ' / ' will be backed up.\e[0m" >&2
-		echo -e "\e[33mWARNING: Only the current filesystem is backed up by default. Attached filesystems will not be backed up.\e[0m"
-		echo -e "\e[33mThis is including but not limited to attached media, virtual filesystems, and other partitions.\e[0m"
-		echo -e "\e[33mIf you want these to be backed up as well, their directories must be manually included.\e[0m\n" >&2
-		
-		want_includes="$(read_input "Do you want to provide file and/or directory inclusions? (Y/n) ")"
-		if [[ $want_includes =~ ^[Yy] ]]; then
-			echo "Please enter each inclusion below. (Press enter again when finished)"
-			
-			local includes=()
-			local include="undefined"
-			until [ -z "$include" ]; do
-				include="$(read_input 'Enter included file or directory: ' '-e')"
-				if [ ! -z "$include" ]; then
-					includes+=("$include")
-				fi
-			done
-			
-			export BACKUP_INCLUDES="${includes[*]}"
-			export LOADED_INCLUDES=true
-		fi
-		
-		if [ -z "$BACKUP_INCLUDES" ]; then
-			export BACKUP_INCLUDES=('/')
-			export LOADED_INCLUDES=true
-		fi
-	fi
-}
-
-function load_exclusions {
-	export LOADED_EXCLUDES=false
-	
-	export BACKUP_EXCLUDES="$(get_input "excluded files" "$EXCLUDES_ARR_KEY" true false false)"
-	if [ -z "$BACKUP_EXCLUDES" ]; then
-		echo "${LOG_PREFIX}: No excludes provided."
-		want_excludes="$(read_input "Do you want to provide exclusions? (Y/n) ")"
-		if [[ $want_excludes =~ ^[Yy] ]]; then
-			echo -e "\nNOTE: Exclusions are entered as regex patterns. Any file path matching at least one pattern will not be backed up.\n"
-			
-			echo "Please enter each exclusion below. (Press enter again when finished)"
-			
-			local excludes=()
-			local exclude="undefined"
-			until [ -z "$exclude" ]; do
-				exclude="$(read_input 'Enter exclude pattern: ' '-e')"
-				if [ ! -z "$exclude" ]; then
-					excludes+=("$exclude")
-				fi
-			done
-			
-			export BACKUP_EXCLUDES="${excludes[*]}"
-			export LOADED_EXCLUDES=true
-		fi
-	fi
-}
-
-function load_keep_last {
-	export KEEP_LAST="$(get_input "keep" "$KEEP_LAST_KEY" true false false)"
-	if [ -z "$KEEP_LAST" ]; then
-		export KEEP_LAST="$(read_input 'How many backups do you wish to keep? (old backups and their data will be deleted) (enter * to keep all) ')"
-	fi
-}
-
-function update_conf {
-	echo "${LOG_PREFIX}: Updating conf file..."
-	
-	yq e -i "$PROJECT_ID_KEY = \"$GOOGLE_PROJECT_ID\"" $CONF_FILE || exit $?
-	yq e -i "$REPOSITORY_KEY = \"$RESTIC_REPOSITORY\"" $CONF_FILE || exit $?
-	yq e -i "$PASSWORD_KEY = \"$RESTIC_PASSWORD\"" $CONF_FILE || exit $?
-	yq e -i "$CRON_KEY = \"$BACKUP_JOB_CRON\"" $CONF_FILE || exit $?
-	
-	if [ ! -z "$JSON_CREDENTIALS_FILE" ]; then
-		yq e -i "$JSON_CREDENTIALS_KEY = \"$JSON_CREDENTIALS_FILE\"" $CONF_FILE || exit $?
-	fi
-	
-	if [ ! -z "$GOOGLE_ACCESS_TOKEN" ]; then
-		yq e -i "$ACCESS_TOKEN_KEY = \"$GOOGLE_ACCESS_TOKEN\"" $CONF_FILE || exit $?
-	fi
-	
-	if [ ! -z "$BACKUP_JOB_OUTPUT_CMD" ]; then
-		yq e -i "$OUTPUT_CMD_KEY = \"$BACKUP_JOB_OUTPUT_CMD\"" $CONF_FILE || exit $?
-	fi
-	
-	if [[ $KEEP_LAST =~ ^[0-9]+$ ]]; then
-		yq e -i "$KEEP_LAST_KEY = $KEEP_LAST" $CONF_FILE || exit $?
-	else
-		yq e -i "$KEEP_LAST_KEY = \"$KEEP_LAST\"" $CONF_FILE || exit $?
-	fi
-	
-	if $LOADED_INCLUDES ; then
-		for include in $BACKUP_INCLUDES; do
-			yq e -i "$INCLUDES_KEY |= . + [\"$include\"]" $CONF_FILE || exit $?
-		done
-	fi
-	
-	if $LOADED_EXCLUDES ; then
-		for exclude in $BACKUP_EXCLUDES; do
-			yq e -i "$EXCLUDES_KEY |= . + [\"$exclude\"]" $CONF_FILE || exit $?
-		done
-	fi
-	
-	echo "${LOG_PREFIX}: $CONF_FILE was updated."
+	yq e -i "del($expression)" $CONF_FILE || exit $?
+	for value in $values; do
+		yq e -i "$expression |= . + [\"$value\"]" $CONF_FILE || exit $?
+	done
 }
 
 function create_conf {
 	local user_group="$(id -gn)"
 	
-	eval $SUDO touch $CONF_FILE || exit $?
-	eval $SUDO chgrp "$user_group" $CONF_FILE || exit $?
-	eval $SUDO chmod ug=rw $CONF_FILE || exit $?
-	eval $SUDO chmod o-rwx $CONF_FILE || exit $?
-}
-
-function load_conf {
-	if [ ! -f "$CONF_FILE" ]; then
-		echo "${LOG_PREFIX}: $CONF_FILE does not exist. Creating..."
-		create_conf
-		echo "${LOG_PREFIX}: $CONF_FILE was created."
-	fi
-	
-	echo "${LOG_PREFIX}: Loading conf file..."
-	export GOOGLE_PROJECT_ID="$(get_input "Google Project ID" "$PROJECT_ID_KEY" false false false)"
-	
-	load_repository
-	load_password
-	
-	load_credentials
-	load_inclusions
-	load_exclusions
-	
-	load_keep_last
-	echo "${LOG_PREFIX}: $CONF_FILE was loaded."
+	sudo touch $CONF_FILE || exit $?
+	sudo chgrp "$user_group" $CONF_FILE || exit $?
+	sudo chmod ug=rw $CONF_FILE || exit $?
+	sudo chmod o-rwx $CONF_FILE || exit $?
 }
 
 function restic_init {
 	echo "${LOG_PREFIX}: Initializing restic repository..."
-	restic init || exit $?
+	run restic -v init || exit $?
 	echo "${LOG_PREFIX}: init done."
 }
 
@@ -292,36 +103,36 @@ function restic_backup {
 		local includes+=("$include")
 	done
 	
+	if [ -z "$BACKUP_INCLUDES" ]; then
+		local includes+=('/')
+	fi
+	
 	for exclude in $BACKUP_EXCLUDES; do
 		local excludes+=("-e")
 		local excludes+=("$exclude")
 	done
 	
-	local IFS=" "
-	restic -v backup \
-		-x \
+	run restic -v backup -x \
 		"${includes[@]}" \
 		"${excludes[@]}" \
-		-e $CONF_FILE \
-		|| exit $?
+		-e $CONF_FILE || exit $?
 	
 	echo "${LOG_PREFIX}: backup done."
 }
 
 function restic_prune {
-	if [ $KEEP_LAST != * ]; then
+	if [ "$KEEP_LAST" != "*" ]; then
 		echo "${LOG_PREFIX}: Pruning old backups..."
-		restic -v forget \
+		run restic -v forget \
 			--prune \
-			--keep-last $KEEP_LAST \
-			|| exit $?
+			--keep-last $KEEP_LAST || exit $?
 		echo "${LOG_PREFIX}: prune done."
 	fi
 }
 
 function restic_check {
 	echo "${LOG_PREFIX}: Checking repository health..."
-	restic -v check || exit $?
+	run restic -v check || exit $?
 	echo "${LOG_PREFIX}: all green."
 }
 
@@ -332,13 +143,51 @@ function restic_snapshots {
 function restic_restore {
 	echo "${LOG_PREFIX}: Restoring from restic repository..."
 	local snapshot=$1
-	eval $SUDO restic restore $snapshot --target / || exit $?
+	run sudo restic restore $snapshot --target / || exit $?
 	echo "${LOG_PREFIX}: restore done."
+}
+
+function load_cron_job {
+	if [ ! -f "$CONF_FILE" ]; then
+		echo "${LOG_PREFIX}: $CONF_FILE does not exist. Creating..."
+		create_conf
+		echo "${LOG_PREFIX}: $CONF_FILE was created."
+	fi
+
+	BACKUP_JOB_CRON="$(load_conf_value $CRON_KEY)"
+	BACKUP_JOB_OUTPUT_CMD="$(load_conf_value $OUTPUT_CMD_KEY)"
+}
+
+function validate_cron_job {
+	if [ -z "$BACKUP_JOB_CRON" ]; then
+		echo "${LOG_PREFIX}: error: cron is a required field but is missing" >&2
+		exit 5
+	fi
+}
+
+function update_cron_job {
+	update_conf_string $CRON_KEY "$BACKUP_JOB_CRON"
+	update_conf_string $OUTPUT_CMD_KEY "$BACKUP_JOB_OUTPUT_CMD"
+}
+
+function read_missing_cron_job {
+	if [ -z "$BACKUP_JOB_CRON" ]; then
+		BACKUP_JOB_CRON="$(read_input "Please enter your cron for the backup job: ")"
+	fi
+	
+	if [ -z "$BACKUP_JOB_OUTPUT_CMD" ]; then
+		wants_output_cmd="$(read_input "Do you want to pipe the output of the backup job to a command? (Y/n) ")"
+		if [[ $wants_output_cmd =~ ^[Yy] ]]; then
+			BACKUP_JOB_OUTPUT_CMD="$(read_input "Please enter your job output command: " "-e")"
+		fi
+	fi
 }
 
 function add_cron_job {
 	load_cron_job
-	update_conf
+	read_missing_cron_job
+	update_cron_job
+	validate_cron_job
 	
 	echo "${LOG_PREFIX}: Adding cron job..."
 	if [ -z "$BACKUP_JOB_OUTPUT_CMD" ]; then
@@ -347,37 +196,297 @@ function add_cron_job {
 		local cron_str="$BACKUP_JOB_CRON $CRON_CMD | $BACKUP_JOB_OUTPUT_CMD"
 	fi
 	
-	(eval $SUDO crontab -l 2> /dev/null ; echo "$cron_str") | eval $SUDO crontab - || exit $?
+	if $DRY_RUN ; then
+		run sudo crontab -l 2> /dev/null
+		run echo "$cron_str"
+		run sudo crontab -
+	else
+		(sudo crontab -l 2> /dev/null ; echo "$cron_str") | sudo crontab - || exit $?
+	fi
 	
 	echo "${LOG_PREFIX}: done."
 }
 
 function show_cron_job {
-	eval $SUDO crontab -l 2> /dev/null | grep "$CRON_CMD"
+	sudo crontab -l 2> /dev/null | grep "$CRON_CMD"
 }
 
 function rm_cron_job {
 	echo "${LOG_PREFIX}: Removing cron job..."
 	
-	eval $SUDO crontab -l 2> /dev/null | grep -v "$CRON_CMD" | eval $SUDO crontab - || exit $?
+	if $DRY_RUN ; then
+		run sudo crontab -l 2> /dev/null
+		run grep -v "$CRON_CMD"
+		run sudo crontab -
+	else
+		sudo crontab -l 2> /dev/null | grep -v "$CRON_CMD" | sudo crontab - || exit $?
+	fi
 	
 	echo "${LOG_PREFIX}: done."
 }
 
+function load_conf {
+	if [ ! -f "$CONF_FILE" ]; then
+		echo "${LOG_PREFIX}: $CONF_FILE does not exist. Creating..."
+		create_conf
+		echo "${LOG_PREFIX}: $CONF_FILE was created."
+	fi
+
+	echo "${LOG_PREFIX}: Loading conf file..."
+	
+	GOOGLE_PROJECT_ID="$(load_conf_value $PROJECT_ID_KEY)"
+	JSON_CREDENTIALS_FILE="$(load_conf_value $JSON_CREDENTIALS_KEY)"
+	GOOGLE_APPLICATION_CREDENTIALS="`eval echo ${JSON_CREDENTIALS_FILE//>}`"
+	GOOGLE_ACCESS_TOKEN="$(load_conf_value $ACCESS_TOKEN_KEY)"
+	RESTIC_REPOSITORY="$(load_conf_value $REPOSITORY_KEY)"
+	RESTIC_PASSWORD="$(load_conf_value $PASSWORD_KEY)"
+	BACKUP_INCLUDES="$(load_conf_value $INCLUDES_ARR_KEY)"
+	BACKUP_EXCLUDES="$(load_conf_value $EXCLUDES_ARR_KEY)"
+	KEEP_LAST="$(load_conf_value $KEEP_LAST_KEY)"
+	
+	echo "${LOG_PREFIX}: $CONF_FILE was loaded."
+}
+
+function validate_conf {
+	if [ -z "$GOOGLE_PROJECT_ID" ]; then
+		echo "${LOG_PREFIX}: error: '$PROJECT_ID_KEY' is required but it is missing. Please check the conf file and try again." >&2
+		exit 5
+	fi
+	
+	if [[ -z "$JSON_CREDENTIALS_FILE" && -z "$GOOGLE_ACCESS_TOKEN" ]]; then
+		echo "${LOG_PREFIX}: error: '$JSON_CREDENTIALS_KEY' or '$ACCESS_TOKEN_KEY' is required but both are missing. Please check the conf file and try again." >&2
+		exit 5
+	fi
+	
+	if [ -z "$RESTIC_REPOSITORY" ]; then
+		echo "${LOG_PREFIX}: error: '$REPOSITORY_KEY' is required but it is missing. Please check the conf file and try again." >&2
+		exit 5
+	fi
+	
+	if [ -z "$RESTIC_PASSWORD" ]; then
+		echo "${LOG_PREFIX}: error: '$PASSWORD_KEY' is required but it is missing. Please check the conf file and try again." >&2
+		exit 5
+	fi
+	
+	if [ -z "$KEEP_LAST" ]; then
+		echo "${LOG_PREFIX}: error: '$KEEP_LAST_KEY' is required but it is missing. Please check the conf file and try again." >&2
+		exit 5
+	elif [[ ! "$KEEP_LAST" =~ ^[0-9]+$ && "$KEEP_LAST" != "*" ]]; then
+		echo "${LOG_PREFIX}: error: '$KEEP_LAST_KEY' is invalid. Must be * or a number. Please try again." >&2
+		exit 5
+	fi
+}
+
+function export_conf {
+	if $DRY_RUN ; then
+		run export GOOGLE_PROJECT_ID="$GOOGLE_PROJECT_ID"
+		run export GOOGLE_APPLICATION_CREDENTIALS="$GOOGLE_APPLICATION_CREDENTIALS"
+		run export GOOGLE_ACCESS_TOKEN="$GOOGLE_ACCESS_TOKEN"
+		run export RESTIC_REPOSITORY="$RESTIC_REPOSITORY"
+		run export RESTIC_PASSWORD="[[hidden]]"
+	fi
+	
+	export GOOGLE_PROJECT_ID
+	export GOOGLE_APPLICATION_CREDENTIALS
+	export GOOGLE_ACCESS_TOKEN
+	export RESTIC_REPOSITORY
+	export RESTIC_PASSWORD
+}
+
+function update_conf {
+	echo "${LOG_PREFIX}: Updating conf file..."
+	
+	update_conf_string $PROJECT_ID_KEY "$GOOGLE_PROJECT_ID"
+	update_conf_string $JSON_CREDENTIALS_KEY "$JSON_CREDENTIALS_FILE"
+	update_conf_string $ACCESS_TOKEN_KEY "$GOOGLE_ACCESS_TOKEN"
+	update_conf_string $REPOSITORY_KEY "$RESTIC_REPOSITORY"
+	update_conf_string $PASSWORD_KEY "$RESTIC_PASSWORD"
+	
+	if [[ "$KEEP_LAST" =~ ^[0-9]+$ ]]; then
+		update_conf_integer $KEEP_LAST_KEY "$KEEP_LAST"
+	else
+		update_conf_string $KEEP_LAST_KEY "$KEEP_LAST"
+	fi
+	
+	update_conf_array $INCLUDES_KEY "$BACKUP_INCLUDES"
+	update_conf_array $EXCLUDES_KEY "$BACKUP_EXCLUDES"
+	
+	echo "${LOG_PREFIX}: $CONF_FILE was updated."
+}
+
+function read_input {
+	local result=""
+	local prompt="$1"
+	local flags="$2"
+	
+	read -p "$prompt" ${flags[@]} result
+	
+	echo "$(trim "$result")"
+}
+
+function read_missing_google_credentials {
+	if [ -z "$GOOGLE_PROJECT_ID" ]; then
+		GOOGLE_PROJECT_ID="$(read_input "Please enter your Google Project ID: ")"
+	fi
+	
+	if [[ -z "$GOOGLE_APPLICATION_CREDENTIALS" || ! -f "$GOOGLE_APPLICATION_CREDENTIALS" ]]; then
+		if [ -z "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
+			echo "${LOG_PREFIX}: No credentials provided."
+		else
+			echo "${LOG_PREFIX}: Credentials file '$GOOGLE_APPLICATION_CREDENTIALS' does not exist."
+		fi
+		
+		has_credentials="$(read_input "Do you have a JSON Credentials file? (Y/n) ")"
+		if [[ $has_credentials =~ ^[Yy] ]]; then
+			JSON_CREDENTIALS_FILE="$(read_input "Please enter your Google Credentials File (json): " "-e")"
+			until [ -f "$(eval echo ${JSON_CREDENTIALS_FILE//>})" ]; do
+				echo "${LOG_PREFIX}: '$JSON_CREDENTIALS_FILE' does not exist. Verify that the provided path is correct and try again."
+				JSON_CREDENTIALS_FILE="$(read_input "Please enter your Google Credentials File (json): " "-e")"
+			done
+			GOOGLE_APPLICATION_CREDENTIALS="`eval echo ${JSON_CREDENTIALS_FILE//>}`"
+		fi
+		
+		if [[ ! $has_credentials =~ ^[Yy] ]]; then
+			echo "${LOG_PREFIX}: Credentials file does not exist. Need access token."
+			JSON_CREDENTIALS_FILE=""
+			GOOGLE_APPLICATION_CREDENTIALS=""
+			if [ -z "$GOOGLE_ACCESS_TOKEN" ]; then
+				GOOGLE_ACCESS_TOKEN="$(read_input "Please enter your Google Access Token: " "-s")"
+			fi
+			echo
+		fi
+	fi
+}
+
+function read_missing_restic_credentials {
+	if [ -z "$RESTIC_REPOSITORY" ]; then
+		local bucket="$(read_input "Repository: Please enter your Google Storage Bucket: gs:")"
+		until [ ! -z "$bucket" ]; do
+			echo "${LOG_PREFIX}: Google Storage Bucket is required. Please try again."
+			local bucket="$(read_input "Repository: Please enter your Google Storage Bucket: gs:")"
+		done
+		
+		local dir="$(read_input "Repository: Please enter directory (default is /): gs:$bucket:")"
+		if [ -z "$dir" ]; then
+			local dir="/"
+		fi
+		
+		RESTIC_REPOSITORY="gs:$bucket:$dir"
+	fi
+	
+	if [ -z "$RESTIC_PASSWORD" ]; then
+		RESTIC_PASSWORD="$(read_input "Please enter your password for new repository: " "-s")"
+		echo
+		RESTIC_PASSWORD_CONFIRM="$(read_input "Please enter your password again: " "-s")"
+		echo
+		until [ "$RESTIC_PASSWORD" == "$RESTIC_PASSWORD_CONFIRM" ]; do
+			echo "${LOG_PREFIX}: Passwords don't match. Please try again."
+			RESTIC_PASSWORD="$(read_input "Please enter your password for new repository: " "-s")"
+			echo
+			RESTIC_PASSWORD_CONFIRM="$(read_input "Please enter your password again: " "-s")"
+			echo
+		done
+	fi
+}
+
+function read_missing_inclusions {
+	if [ -z "$BACKUP_INCLUDES" ];  then
+		echo "${LOG_PREFIX}: No includes provided."
+		
+		echo -e "\n\e[33mWARNING: If no includes are provided, then ' / ' will be backed up.\e[0m" >&2
+		echo -e "\e[33mWARNING: Only the current filesystem is backed up by default. Attached filesystems will not be backed up.\e[0m" >&2
+		echo -e "\e[33mThis is including but not limited to attached media, virtual filesystems, and other partitions.\e[0m" >&2
+		echo -e "\e[33mIf you want these to be backed up as well, their directories must be manually included.\e[0m\n" >&2
+		
+		want_includes="$(read_input "Do you want to provide file and/or directory inclusions? (Y/n) ")"
+		if [[ $want_includes =~ ^[Yy] ]]; then
+			local tmp_file=/tmp/backup_includes
+			local instructions="Enter each inclusion on a new line. (Save and exit when finished)
+
+Please enter your includes below:
+"
+			
+			echo "$instructions" > $tmp_file
+			if command -v vim &> /dev/null ; then
+				vim '+ normal GA' $tmp_file
+			else
+				vi '+ normal GA' $tmp_file
+			fi
+			
+			BACKUP_INCLUDES="$(trim "$(cat $tmp_file | sed -e '1,/includes/d')")"
+			rm $tmp_file
+		fi
+		
+		if [ -z "$BACKUP_INCLUDES" ]; then
+			BACKUP_INCLUDES=('/')
+		fi
+	fi
+}
+
+function read_missing_exclusions {
+	if [ -z "$BACKUP_EXCLUDES" ];  then
+		echo "${LOG_PREFIX}: No excludes provided."
+		
+		want_excludes="$(read_input "Do you want to provide exclusions? (Y/n) ")"
+		if [[ $want_excludes =~ ^[Yy] ]]; then
+			local tmp_file=/tmp/backup_excludes
+			local instructions="Enter each exclusion on a new line. (Save and exit when finished)
+
+Please enter your excludes below:
+"
+			
+			echo "$instructions" > $tmp_file
+			if command -v vim &> /dev/null ; then
+				vim '+ normal GA' $tmp_file
+			else
+				vi '+ normal GA' $tmp_file
+			fi
+			
+			BACKUP_EXCLUDES="$(trim "$(cat $tmp_file | sed -e '1,/excludes/d')")"
+			rm $tmp_file
+		fi
+	fi
+}
+
+function read_missing_keep {
+	if [ -z "$KEEP_LAST" ]; then
+		KEEP_LAST="$(read_input 'How many backups do you wish to keep? (old backups and their data will be deleted) (enter * to keep all) ')"
+		until [[ "$KEEP_LAST" =~ ^[0-9]+$ || "$KEEP_LAST" == "*" ]]; do
+			echo "${LOG_PREFIX}: '$KEEP_LAST' is invalid. Must be * or a number. Please try again."
+			KEEP_LAST="$(read_input 'How many backups do you wish to keep? (old backups and their data will be deleted) (enter * to keep all) ')"
+		done
+	fi
+}
+
+function read_missing_conf {
+	read_missing_google_credentials
+	read_missing_restic_credentials
+	read_missing_inclusions
+	read_missing_exclusions
+	read_missing_keep
+}
+
+function load_all_conf {
+	load_conf
+	read_missing_conf
+	validate_conf
+	update_conf
+	export_conf
+}
+
 function init {
 	echo "${LOG_PREFIX}: init"
-	LOG_PREFIX="backup-init"
+	update_prefix "backup-init"
 	
 	local wants_initial_backup="$(read_input "Do you also want to start the initial backup? (Once started, this will take a lot of time to complete) (Y/n) ")"
 	local wants_cron_job="$(read_input "Do you also want to schedule a regular backup? (Y/n) ")"
 	
-	load_conf
+	load_all_conf
 	
 	restic_init
 	
 	if [[ $wants_initial_backup =~ ^[Yy] ]]; then
-		exec 5>&1
-		restic_backup 2>&1 | tee >(cat - >&5) | eval $BACKUP_JOB_OUTPUT_CMD || exit $?
+		restic_backup 2>&1
 	else
 		echo "run '$SCRIPT start' when ready to start the initial backup, or wait until backup job runs if one is scheduled."
 	fi
@@ -386,16 +495,14 @@ function init {
 		add_cron_job
 	else
 		echo "run '$SCRIPT schedule' to schedule the backup job when ready."
-		update_conf
 	fi
 }
 
 function start {
 	echo "${LOG_PREFIX}: start"
-	LOG_PREFIX="backup-start"
+	update_prefix "backup-start"
 	
-	load_conf
-	update_conf
+	load_all_conf
 	
 	restic_backup
 	restic_prune
@@ -405,29 +512,28 @@ function start {
 function schedule {
 	if [ ! -z "$(show_cron_job)" ]; then
 		echo "backup-schedule: error: backup job already exists."  >&2
-		exit 3
+		exit 5
 	fi
 
 	echo "${LOG_PREFIX}: schedule"
-	LOG_PREFIX="backup-schedule"
-	
-	load_conf
+	update_prefix "backup-schedule"
 	
 	add_cron_job
 }
 
 function show {
+	update_prefix "backup-show"
 	show_cron_job
 }
 
 function unschedule {
 	if [ -z "$(show_cron_job)" ]; then
 		echo "backup-unschedule: error: backup job doesn't exist."  >&2
-		exit 3
+		exit 5
 	fi
 	
 	echo "${LOG_PREFIX}: unschedule"
-	LOG_PREFIX="backup-unschedule"
+	update_prefix "backup-unschedule"
 	
 	rm_cron_job
 }
@@ -435,22 +541,18 @@ function unschedule {
 function reschedule {
 	if [ -z "$(show_cron_job)" ]; then
 		echo "backup-reschedule: error: backup job doesn't exist."  >&2
-		exit 3
+		exit 5
 	fi
 
 	echo "${LOG_PREFIX}: reschedule"
-	LOG_PREFIX="backup-reschedule"
-	
-	load_conf
-	update_conf
+	update_prefix "backup-reschedule"
 	
 	rm_cron_job
 	add_cron_job
 }
 
 function snapshots {
-	load_conf
-	update_conf
+	load_all_conf
 	
 	restic_snapshots
 }
@@ -459,9 +561,6 @@ function snapshots {
 #Add help page
 #Refactor yq e to yq
 function restore {
-	echo "${LOG_PREFIX}: restore"
-	LOG_PREFIX="backup-restore"
-
 	local snapshot=latest
 	while (( $# )); do
 		case $1 in
@@ -470,15 +569,17 @@ function restore {
 					local snapshot=$2
 					shift 2
 				else
-					echo "${LOG_PREFIX}: error: \"$1\" is missing an argument."  >&2
-					exit 4
+					echo "backup-restore: error: \"$1\" is missing an argument."  >&2
+					exit 3
 				fi
 				;;
 		esac
 	done
+
+	echo "${LOG_PREFIX}: restore"
+	update_prefix "backup-restore"
 	
-	load_conf
-	update_conf
+	load_all_conf
 	
 	restic_restore $snapshot
 }
@@ -486,7 +587,7 @@ function restore {
 function conf_path {
 	if [ ! -f $CONF_FILE ]; then
 		echo "no conf file exists" >&2
-		return 1
+		return 2
 	fi
 	
 	echo "$CONF_FILE"
@@ -508,6 +609,7 @@ else
 fi
 CRON_CMD="$SCRIPT start 2>&1"
 
+DRY_RUN=false
 while (( $# )); do
 	case $1 in
 		-v|--version)
@@ -522,6 +624,10 @@ while (( $# )); do
 			conf_edit
 			exit 0
 			;;
+		-d|--dry-run)
+			DRY_RUN=true
+			shift
+			;;
 		*)
 			COMMAND=$1
 			shift
@@ -530,7 +636,7 @@ while (( $# )); do
 	esac
 done
 
-LOG_PREFIX="backup"
+update_prefix "backup"
 
 case $COMMAND in
 	init) 
