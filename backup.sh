@@ -1,5 +1,8 @@
 #! /bin/bash
 
+set -eo pipefail
+set -o noglob
+
 VERSION=1.0
 VERSION_INFO="backup version $VERSION"
 
@@ -316,7 +319,7 @@ function update_conf_string {
 	local value="$2"
 	
 	if [ ! -z "$value" ]; then
-		yq -i "$expression = \"$value\"" $CONF_FILE || exit $?
+		yq -i "$expression = \"$value\"" $CONF_FILE 
 	fi
 }
 
@@ -325,32 +328,35 @@ function update_conf_integer {
 	local value="$2"
 	
 	if [ ! -z "$value" ]; then
-		yq -i "$expression = $value" $CONF_FILE || exit $?
+		yq -i "$expression = $value" $CONF_FILE 
 	fi
 }
 
 function update_conf_array {
+	set -o noglob
+
 	local expression=$1
 	local values="$2"
+	echo "$values"
 	
-	yq -i "del($expression)" $CONF_FILE || exit $?
+	yq -i "del($expression)" $CONF_FILE 
 	for value in $values; do
-		yq -i "$expression |= . + [\"$value\"]" $CONF_FILE || exit $?
+		yq -i "$expression |= . + [\"$value\"]" $CONF_FILE 
 	done
 }
 
 function create_conf {
 	local user_group="$(id -gn)"
 	
-	sudo touch $CONF_FILE || exit $?
-	sudo chgrp "$user_group" $CONF_FILE || exit $?
-	sudo chmod ug=rw $CONF_FILE || exit $?
-	sudo chmod o-rwx $CONF_FILE || exit $?
+	sudo touch $CONF_FILE 
+	sudo chgrp "$user_group" $CONF_FILE 
+	sudo chmod ug=rw $CONF_FILE 
+	sudo chmod o-rwx $CONF_FILE 
 }
 
 function restic_init {
 	echo "${LOG_PREFIX}: Initializing restic repository..."
-	run restic -v init || exit $?
+	run restic -v init 
 	echo "${LOG_PREFIX}: init done."
 }
 
@@ -375,7 +381,7 @@ function restic_backup {
 	run sudo restic -v backup -x \
 		"${includes[@]}" \
 		"${excludes[@]}" \
-		-e $CONF_FILE || exit $?
+		-e $CONF_FILE 
 	
 	echo "${LOG_PREFIX}: backup done."
 }
@@ -385,25 +391,25 @@ function restic_prune {
 		echo "${LOG_PREFIX}: Pruning old backups..."
 		run restic -v forget \
 			--prune \
-			--keep-last $KEEP_LAST || exit $?
+			--keep-last $KEEP_LAST 
 		echo "${LOG_PREFIX}: prune done."
 	fi
 }
 
 function restic_check {
 	echo "${LOG_PREFIX}: Checking repository health..."
-	run restic -v check || exit $?
+	run restic -v check 
 	echo "${LOG_PREFIX}: all green."
 }
 
 function restic_snapshots {
-	restic -v snapshots || exit $?
+	restic -v snapshots 
 }
 
 function restic_restore {
 	echo "${LOG_PREFIX}: Restoring from restic repository..."
 	local snapshot=$1
-	run sudo restic restore $snapshot --target / || exit $?
+	run sudo restic restore $snapshot --target / 
 	echo "${LOG_PREFIX}: restore done."
 }
 
@@ -466,7 +472,7 @@ function add_cron_job {
 		run echo "$cron_str"
 		run sudo crontab -
 	else
-		(sudo crontab -l 2> /dev/null ; echo "$cron_str") | sudo crontab - || exit $?
+		(sudo crontab -l 2> /dev/null ; echo "$cron_str") | sudo crontab - 
 	fi
 	
 	echo "${LOG_PREFIX}: done."
@@ -484,7 +490,7 @@ function rm_cron_job {
 		run grep -v "$CRON_CMD"
 		run sudo crontab -
 	else
-		sudo crontab -l 2> /dev/null | grep -v "$CRON_CMD" | sudo crontab - || exit $?
+		sudo crontab -l 2> /dev/null | grep -v "$CRON_CMD" | sudo crontab - 
 	fi
 	
 	echo "${LOG_PREFIX}: done."
