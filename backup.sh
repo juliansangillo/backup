@@ -372,7 +372,7 @@ function restic_backup {
 		local excludes+=("$exclude")
 	done
 	
-	run restic -v backup -x \
+	run sudo restic -v backup -x \
 		"${includes[@]}" \
 		"${excludes[@]}" \
 		-e $CONF_FILE || exit $?
