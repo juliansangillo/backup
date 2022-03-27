@@ -303,7 +303,7 @@ function trim {
 function load_conf_value {
 	local expression=$1
 	
-	local result="$(yq e "$expression" $CONF_FILE)"
+	local result="$(yq "$expression" $CONF_FILE)"
 	if [ "$result" == "null" ]; then
 		local result=""
 	fi
@@ -316,7 +316,7 @@ function update_conf_string {
 	local value="$2"
 	
 	if [ ! -z "$value" ]; then
-		yq e -i "$expression = \"$value\"" $CONF_FILE || exit $?
+		yq -i "$expression = \"$value\"" $CONF_FILE || exit $?
 	fi
 }
 
@@ -325,7 +325,7 @@ function update_conf_integer {
 	local value="$2"
 	
 	if [ ! -z "$value" ]; then
-		yq e -i "$expression = $value" $CONF_FILE || exit $?
+		yq -i "$expression = $value" $CONF_FILE || exit $?
 	fi
 }
 
@@ -333,9 +333,9 @@ function update_conf_array {
 	local expression=$1
 	local values="$2"
 	
-	yq e -i "del($expression)" $CONF_FILE || exit $?
+	yq -i "del($expression)" $CONF_FILE || exit $?
 	for value in $values; do
-		yq e -i "$expression |= . + [\"$value\"]" $CONF_FILE || exit $?
+		yq -i "$expression |= . + [\"$value\"]" $CONF_FILE || exit $?
 	done
 }
 
@@ -939,8 +939,6 @@ function snapshots {
 	restic_snapshots
 }
 
-#Add help page
-#Refactor yq e to yq
 function restore {
 	update_prefix "backup-restore"
 
