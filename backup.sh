@@ -22,7 +22,7 @@ EXCLUDES_ARR_KEY=".backup.excludes[]"
 
 IFS=$'\n'
 
-PROMPT="Password for $USER: "
+PROMPT="SUDO password for $USER: "
 
 function help {
 	local help_text="Usage: backup [-d] [-q] <command> [-h]
@@ -375,7 +375,7 @@ function restic_backup {
 		local excludes+=("$exclude")
 	done
 	
-	run sudo restic -v backup -x \
+	run sudo -E restic -v backup -x \
 		"${includes[@]}" \
 		"${excludes[@]}" \
 		-e $CONF_FILE 
@@ -406,7 +406,7 @@ function restic_snapshots {
 function restic_restore {
 	echo "${LOG_PREFIX}: Restoring from restic repository..."
 	local snapshot=$1
-	run sudo restic restore $snapshot --target / 
+	run sudo -E restic restore $snapshot --target / 
 	echo "${LOG_PREFIX}: restore done."
 }
 
