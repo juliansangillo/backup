@@ -18,10 +18,12 @@ Back up an entire linux system to google cloud storage.
 
 ## Usages
 ```bash
-backup <command>
-backup [-cevh]
+backup [-d] [-q] <command>
+backup [-c] [-e] [-v] [-h]
 ```
 - command : Operation to perform. Next section has details on the possible commands.
+- -d, --dry-run : Execute the command without making changes to the restic repository or the host. Any commands that do make changes will not run and will simply be outputted instead. It will also output any export VARIABLE=VALUE except for password related variables. This is useful for troubleshooting as well as entering missing configuration and walking through the process without actually making changes.
+- -q, --quiet : Execute the command in quiet mode. This will gaurentee that the user is not prompted for input during runtime. Any configuration that is missing or invalid will cause it to error out instead of prompting the user for information.
 - -c, --conf : Shows path to conf file if it exists.
 - -e, --edit : Open conf in editor to add or change file. Editor used is vim if installed or vi otherwise.
 - -v, --version : Show version info.
@@ -32,49 +34,49 @@ There are a number of operations that can be performed in relation to the backup
 
 ### Init
 ```bash
-backup init
+backup [-d] [-q] init
 ```
 Initialize the google cloud storage (gs) repository (will be referred to as "the repository" from here on). This must be run first. After initializing the repository, it will also ask if you would want to schedule a regular backup and if you want to start the initial backup now.
 
 ### Start
 ```bash
-backup start
+backup [-d] [-q] start
 ```
-Starts a backup. The repository must be initialized first. Backed up data will be encrypted using the repository password provided in the conf. Also provided in the conf is a list of files and directories to include and a list of regex patterns to exclude. This combination is used to determine what should be backed up. Backups are also incremental, so it won't re-upload duplicate data in the repository every backup and each subsequent backup won't take as much time. At the end of the backup, it will also forget old backups and delete data from the repository that isn't used anymore in order to reduce consumed memory and likewise cost.
+Starts a backup. The repository must be initialized first. Backed up data will be encrypted using the repository password provided in the conf. Also provided in the conf is a list of files and directories to include and a list of regex patterns to exclude. This combination is used to determine what should be backed up. Backups are also incremental, so it won't re-upload duplicate data in the repository and each subsequent backup won't take as much time. At the end of the backup, it will also forget old backups and delete data from the repository that isn't used anymore in order to reduce consumed memory and cost.
 
 ### Schedule
 ```bash
-backup schedule
+backup [-d] [-q] schedule
 ```
 This will add a cron job on your machine which will run `backup start` at a regular interval. It will also pipe the output to a custom command. This is useful in sending yourself the output logs by email or notification. The output command must support taking input from stdin. The cron time and output command can be specified in the conf. This will error if the cron job already exists.
 
 ### Show
 ```bash
-backup show
+backup [-d] [-q] show
 ```
-The show command will output the backup cron job if it exists. If it doesn't exist, then nothing will be outputted and a non-zero exit code is returned.
+The show command will output the backup cron job if it exists. If it doesn't exist, then nothing will be outputted and a non-zero exit code is returned. Unaffected by -d or -q.
 
 ### Unschedule
 ```bash
-backup unschedule
+backup [-d] [-q] unschedule
 ```
 This will remove the cron job from your machine and will error if the cron job doesn't exist.
 
 ### Reschedule
 ```bash
-backup reschedule
+backup [-d] [-q] reschedule
 ```
 This will update the cron job with the current configuration. Changing the cron time or output command will NOT update the cron job. The reschedule command will need to be run if you change the conf.
 
 ### Snapshots
 ```bash
-backup snapshots
+backup [-d] [-q] snapshots
 ```
-The snapshots command will output the list of saved snapshots.
+The snapshots command will output the list of saved snapshots. Unaffected by -d or -q.
 
 ### Restore
 ```bash
-backup restore [-s <snapshot-id>]
+backup [-d] [-q] restore [-s <snapshot-id>]
 ```
 - -s, --snapshot : The snapshot id to restore to. The default is latest.
 
@@ -84,17 +86,18 @@ This will restore your system using one of the saved snapshots. Use `backup snap
 The conf file is in yaml format and is placed at the path returned by `backup -c`.
 ```yaml
 backup:
+    keep: 10    #How many backups to keep in the repository. Any old backups that exceed this amount will be deleted. Enter '*' here to keep all backups.
     google:
         project-id: my-google-project
-        credentials: /home/user/.config/backup.json #required only if no access token
-        access-token: some_gcloud_access_token #required only if no json credentials
+        credentials: /home/user/.config/backup.json    #Required only if no access token.
+        access-token: some_gcloud_access_token    #Required only if no json credentials.
     restic:
-        repository: gs:my-google-backup-bucket:/
-        password: my_random_password
-    includes:
+        repository: gs:my-google-backup-bucket:/    #Google storage bucket and restic repository. Must start with gs, then have the bucket name, and then end with the directory path each separated by colons.
+        password: my_random_password    #Password choosen by you to encrypt the files with. A randomized and secure password is recommended here.
+    includes:    #List of files and directories to include in the backup. Default is /. Separate filesystems and partitions must be specified here to be backed as well.
         - /
         - /home
-    excludes: #optional
+    excludes:    #Optional. List of paths to exclude from the backup. Regex is supported here. Any file or directory path that is a match will not be backed up.
         - .*/.cache/.*
         - .*/.local/share/gvfs-metadata/.*
         - .*/.local/share/Trash/.*
@@ -103,9 +106,8 @@ backup:
         - .*/tmp/.*
         - .*/temp/.*
     job:
-        cron: 0 2 * * *
-        output-cmd: mail #optional
-	keep: 10
+        cron: 0 2 * * *    #Cron string. The backup will run on a regular schedule at this time.
+        output-cmd: mail -s "Hello World" someone@example.com    #Optional. Bash command to pipe the output of the backup to. Useful for notifications.
 ```
 NOTE: This is only an example and you are expected to change it to meet your requirements. Fields that are optional are marked as optional. Inclusions have to be there, even if the only included directory is root. This tool will only backup the current filesystem. If there are mounted filesystems or separate partitions that you want to backup as well, then they have to be listed separately. For example, if home and usr are separate partitions here, then everything in root that is on the same filesystem and /home is backed up, but /usr isn't backed up because it is not included.
 

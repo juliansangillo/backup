@@ -160,7 +160,7 @@ function load_cron_job {
 
 function validate_cron_job {
 	if [ -z "$BACKUP_JOB_CRON" ]; then
-		echo "${LOG_PREFIX}: error: cron is a required field but is missing" >&2
+		echo "${LOG_PREFIX}: error: '$CRON_KEY' is a required field but is missing" >&2
 		exit 5
 	fi
 }
@@ -185,9 +185,14 @@ function read_missing_cron_job {
 
 function add_cron_job {
 	load_cron_job
-	read_missing_cron_job
-	update_cron_job
-	validate_cron_job
+	
+	if $QUIET ; then
+		validate_cron_job
+	else
+		read_missing_cron_job
+		validate_cron_job
+		update_cron_job
+	fi
 	
 	echo "${LOG_PREFIX}: Adding cron job..."
 	if [ -z "$BACKUP_JOB_OUTPUT_CMD" ]; then
@@ -468,9 +473,15 @@ function read_missing_conf {
 
 function load_all_conf {
 	load_conf
-	read_missing_conf
-	validate_conf
-	update_conf
+	
+	if $QUIET ; then
+		validate_conf
+	else
+		read_missing_conf
+		validate_conf
+		update_conf
+	fi
+	
 	export_conf
 }
 
@@ -478,8 +489,13 @@ function init {
 	echo "${LOG_PREFIX}: init"
 	update_prefix "backup-init"
 	
-	local wants_initial_backup="$(read_input "Do you also want to start the initial backup? (Once started, this will take a lot of time to complete) (Y/n) ")"
-	local wants_cron_job="$(read_input "Do you also want to schedule a regular backup? (Y/n) ")"
+	if $QUIET ; then
+		local wants_initial_backup='n'
+		local wants_cron_job='n'
+	else
+		local wants_initial_backup="$(read_input "Do you also want to start the initial backup? (Once started, this will take a lot of time to complete) (Y/n) ")"
+		local wants_cron_job="$(read_input "Do you also want to schedule a regular backup? (Y/n) ")"
+	fi
 	
 	load_all_conf
 	
@@ -510,13 +526,13 @@ function start {
 }
 
 function schedule {
-	if [ ! -z "$(show_cron_job)" ]; then
-		echo "backup-schedule: error: backup job already exists."  >&2
-		exit 5
-	fi
-
 	echo "${LOG_PREFIX}: schedule"
 	update_prefix "backup-schedule"
+
+	if [ ! -z "$(show_cron_job)" ]; then
+		echo "${LOG_PREFIX}: error: backup job already exists."  >&2
+		exit 5
+	fi
 	
 	add_cron_job
 }
@@ -527,25 +543,25 @@ function show {
 }
 
 function unschedule {
-	if [ -z "$(show_cron_job)" ]; then
-		echo "backup-unschedule: error: backup job doesn't exist."  >&2
-		exit 5
-	fi
-	
 	echo "${LOG_PREFIX}: unschedule"
 	update_prefix "backup-unschedule"
+
+	if [ -z "$(show_cron_job)" ]; then
+		echo "${LOG_PREFIX}: error: backup job doesn't exist."  >&2
+		exit 5
+	fi
 	
 	rm_cron_job
 }
 
 function reschedule {
-	if [ -z "$(show_cron_job)" ]; then
-		echo "backup-reschedule: error: backup job doesn't exist."  >&2
-		exit 5
-	fi
-
 	echo "${LOG_PREFIX}: reschedule"
 	update_prefix "backup-reschedule"
+
+	if [ -z "$(show_cron_job)" ]; then
+		echo "${LOG_PREFIX}: error: backup job doesn't exist."  >&2
+		exit 5
+	fi
 	
 	rm_cron_job
 	add_cron_job
@@ -557,10 +573,12 @@ function snapshots {
 	restic_snapshots
 }
 
-#Add quiet mode global flag
 #Add help page
 #Refactor yq e to yq
 function restore {
+	echo "${LOG_PREFIX}: restore"
+	update_prefix "backup-restore"
+
 	local snapshot=latest
 	while (( $# )); do
 		case $1 in
@@ -569,15 +587,12 @@ function restore {
 					local snapshot=$2
 					shift 2
 				else
-					echo "backup-restore: error: \"$1\" is missing an argument."  >&2
+					echo "${LOG_PREFIX}: error: \"$1\" is missing an argument."  >&2
 					exit 3
 				fi
 				;;
 		esac
 	done
-
-	echo "${LOG_PREFIX}: restore"
-	update_prefix "backup-restore"
 	
 	load_all_conf
 	
@@ -607,9 +622,10 @@ if [ -f "$0" ]; then
 else
 	SCRIPT="$0"
 fi
-CRON_CMD="$SCRIPT start 2>&1"
+CRON_CMD="$SCRIPT -q start 2>&1"
 
 DRY_RUN=false
+QUIET=false
 while (( $# )); do
 	case $1 in
 		-v|--version)
@@ -626,6 +642,10 @@ while (( $# )); do
 			;;
 		-d|--dry-run)
 			DRY_RUN=true
+			shift
+			;;
+		-q|--quiet)
+			QUIET=true
 			shift
 			;;
 		*)
