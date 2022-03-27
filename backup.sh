@@ -333,11 +333,8 @@ function update_conf_integer {
 }
 
 function update_conf_array {
-	set -o noglob
-
 	local expression=$1
 	local values="$2"
-	echo "$values"
 	
 	yq -i "del($expression)" $CONF_FILE 
 	for value in $values; do
