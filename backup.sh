@@ -27,57 +27,261 @@ Usage: backup [-c] [-e] [-v] [-h]
 
 Back up an entire linux system to google cloud storage.
 
-  command may be		init | start | schedule | show | unschedule | 
-				reschedule | snapshots | restore
+  command may be	init | start | schedule | show | unschedule | 
+			reschedule | snapshots | restore
 
 For detailed information on any command and its flags, run:
   backup <command> --help
   
 backup.conf:
 
-A yaml conf file is required by most commands. If no conf file exists or required fields 
-are missing, then it will prompt you to input the missing data and will update the 
-conf file accordingly, unless running in quiet mode. To manually create, run 
-'backup --edit'. Alternatively, you can run the init command in dry-run mode so 
-it only prompts you for the required configuration and won't actually make changes. 
-This can be done by running 'backup --dry-run init'.
+A yaml conf file is required by most commands. If no conf file exists or 
+required fields are missing, then it will prompt you to input the missing 
+data and will update the conf file accordingly, unless running in quiet mode. 
+To manually create, run 'backup --edit'. Alternatively, you can run the init 
+command in dry-run mode so it only prompts you for the required configuration 
+and won't actually make changes. This can be done by running 
+'backup --dry-run init'.
 
 For detailed information on the conf file and its structure, please see:
   https://github.com/juliansangillo/backup#backupconf
 
 Global Flags:
-  -d, --dry-run			Execute the command without making changes to the restic 
-				repository. Any commands that do make changes will not run and will 
-				simply be outputted instead. It will also output any variable exports 
-				except for password related variables. This is useful for troubleshooting 
-				as well as entering missing configuration and walking through the 
-				process without actually making changes.
+  -d, --dry-run		Execute the command without making changes to the restic 
+			repository or crontab. Any commands that do make changes 
+			will not run and will simply be outputted instead. It 
+			will also output any variable exports except for 
+			password related variables. This is useful for 
+			troubleshooting as well as entering missing 
+			configuration and walking through the process without 
+			actually making changes.
 				
-  -q, --quiet			Execute the command in quiet mode. This will gaurentee that 
-				the user is not prompted for input during runtime. Any 
-				configuration that is missing or invalid will cause it to error 
-				out instead of prompting the user for information.
+  -q, --quiet		Execute the command in quiet mode. This will gaurentee 
+			that the user is not prompted for input during runtime. 
+			Any configuration that is missing or invalid will cause 
+			it to error out instead of prompting the user for 
+			information.
 				
-  -c, --conf			Shows path to conf file if it exists.
+  -c, --conf		Shows path to conf file if it exists.
   
-  -e, --edit			Open conf in editor to add or change file. Editor used is vim if 
-				installed or vi otherwise.
+  -e, --edit		Open conf in editor to add or change file. Editor used 
+			is vim if installed or vi otherwise.
 				
-  -v, --version			Show version info.
+  -v, --version		Show version info.
   
-  -h, --help			Show this help text."
+  -h, --help		Show this help text."
 
 	echo "$help_text"
 }
 
 function help_init {
-	local help_text="
-"
+	local help_text="Usage: backup [-d] [-q] init [-h]
+
+Initialize the google cloud storage (gs) repository (the repository). This must 
+be run first. It will also prompt you if you want to start the initial backup 
+and if you want to schedule a regular backup. In quiet mode, you won't be 
+prompted and the default 'no' response is used for both questions. In this case, 
+the initial backup and scheduling a backup job will have to be done manually.
+
+Options:
+  -h, --help		Show this help text.
+  
+Global Flags:
+  -d, --dry-run		Execute the command without making changes to the restic 
+			repository or crontab. Any commands that do make changes 
+			will not run and will simply be outputted instead. It 
+			will also output any variable exports except for 
+			password related variables. This is useful for 
+			troubleshooting as well as entering missing 
+			configuration and walking through the process without 
+			actually making changes.
+				
+  -q, --quiet		Execute the command in quiet mode. This will gaurentee 
+			that the user is not prompted for input during runtime. 
+			Any configuration that is missing or invalid will cause 
+			it to error out instead of prompting the user for 
+			information."
+	
+	echo "$help_text"
+}
+
+function help_start {
+	local help_text="Usage: backup [-d] [-q] start [-h]
+	
+Starts a backup. The repository must be initialized first. Backed up data will 
+be encrypted using the repository password provided in the conf. Also provided 
+in the conf is a list of files and directories to include and a list of regex 
+patterns to exclude. This combination is used to determine what should be 
+backed up. Backups are also incremental, so it won't re-upload duplicate data 
+in the repository and each subsequent backup won't take as much time. At the 
+end of the backup, it will also forget old backups and delete data from the 
+repository that isn't used anymore in order to reduce consumed memory and cost.
+
+Options:
+  -h, --help		Show this help text.
+  
+Global Flags:
+  -d, --dry-run		Execute the command without making changes to the restic 
+			repository or crontab. Any commands that do make changes 
+			will not run and will simply be outputted instead. It 
+			will also output any variable exports except for 
+			password related variables. This is useful for 
+			troubleshooting as well as entering missing 
+			configuration and walking through the process without 
+			actually making changes.
+				
+  -q, --quiet		Execute the command in quiet mode. This will gaurentee 
+			that the user is not prompted for input during runtime. 
+			Any configuration that is missing or invalid will cause 
+			it to error out instead of prompting the user for 
+			information."
+	
+	echo "$help_text"
+}
+
+function help_schedule {
+	local help_text="Usage: backup [-d] [-q] schedule [-h]
+	
+This will add a cron job on your machine which will run 'backup -q start' at a 
+regular interval. It can also pipe the output to a custom command. This is 
+useful in sending yourself the output logs by email or notification. The output 
+command must support taking input from stdin. The cron time and output command 
+can be specified in the conf. This will error if the cron job already exists.
+
+Options:
+  -h, --help		Show this help text.
+  
+Global Flags:
+  -d, --dry-run		Execute the command without making changes to the restic 
+			repository or crontab. Any commands that do make changes 
+			will not run and will simply be outputted instead. It 
+			will also output any variable exports except for 
+			password related variables. This is useful for 
+			troubleshooting as well as entering missing 
+			configuration and walking through the process without 
+			actually making changes.
+				
+  -q, --quiet		Execute the command in quiet mode. This will gaurentee 
+			that the user is not prompted for input during runtime. 
+			Any configuration that is missing or invalid will cause 
+			it to error out instead of prompting the user for 
+			information."
+	
+	echo "$help_text"
+}
+
+function help_show {
+	local help_text="Usage: backup [-d] [-q] show [-h]
+	
+The show command will output the backup cron job if it exists. If it doesn't 
+exist, then nothing will be outputted and a non-zero exit code is returned. 
+Unaffected by --dry-run or --quiet.
+
+Options:
+  -h, --help		Show this help text."
+	
+	echo "$help_text"
+}
+
+function help_unschedule {
+	local help_text="Usage: backup [-d] [-q] unschedule [-h]
+
+This will remove the cron job from your machine and will error if the cron job 
+doesn't exist.
+
+Options:
+  -h, --help		Show this help text.
+  
+Global Flags:
+  -d, --dry-run		Execute the command without making changes to the restic 
+			repository or crontab. Any commands that do make changes 
+			will not run and will simply be outputted instead. It 
+			will also output any variable exports except for 
+			password related variables. This is useful for 
+			troubleshooting as well as entering missing 
+			configuration and walking through the process without 
+			actually making changes.
+				
+  -q, --quiet		Execute the command in quiet mode. This will gaurentee 
+			that the user is not prompted for input during runtime. 
+			Any configuration that is missing or invalid will cause 
+			it to error out instead of prompting the user for 
+			information."
+
+	echo "$help_text"
+}
+
+function help_reschedule {
+	local help_text="Usage: backup [-d] [-q] reschedule [-h]
+	
+This will update the cron job with the current configuration. Changing the cron 
+time or output command in the conf file will NOT automattically update the cron 
+job. The reschedule command will need to be run if you change the conf.
+
+Options:
+  -h, --help		Show this help text.
+  
+Global Flags:
+  -d, --dry-run		Execute the command without making changes to the restic 
+			repository or crontab. Any commands that do make changes 
+			will not run and will simply be outputted instead. It 
+			will also output any variable exports except for 
+			password related variables. This is useful for 
+			troubleshooting as well as entering missing 
+			configuration and walking through the process without 
+			actually making changes.
+				
+  -q, --quiet		Execute the command in quiet mode. This will gaurentee 
+			that the user is not prompted for input during runtime. 
+			Any configuration that is missing or invalid will cause 
+			it to error out instead of prompting the user for 
+			information."
+	
+	echo "$help_text"
+}
+
+function help_snapshots {
+	local help_text="Usage: backup [-d] [-q] snapshots [-h]
+
+The snapshots command will output the list of saved snapshots. Unaffected by 
+--dry-run or --quiet.
+
+Options:
+  -h, --help		Show this help text."
+	
+	echo "$help_text"
+}
+
+function help_restore {
+	local help_text="backup [-d] [-q] restore [-s <snapshot-id>] [-h]
+
+This will restore your system using one of the saved snapshots. Use 
+'backup snapshots' to get the list of snapshot ids.
+
+Options:
+  -h, --help		Show this help text.
+  
+Global Flags:
+  -d, --dry-run		Execute the command without making changes to the restic 
+			repository or crontab. Any commands that do make changes 
+			will not run and will simply be outputted instead. It 
+			will also output any variable exports except for 
+			password related variables. This is useful for 
+			troubleshooting as well as entering missing 
+			configuration and walking through the process without 
+			actually making changes.
+				
+  -q, --quiet		Execute the command in quiet mode. This will gaurentee 
+			that the user is not prompted for input during runtime. 
+			Any configuration that is missing or invalid will cause 
+			it to error out instead of prompting the user for 
+			information."
 	
 	echo "$help_text"
 }
 
 function update_prefix {
+	PRIOR_PREFIX="$LOG_PREFIX"
 	LOG_PREFIX="$1"
 	export SUDO_PROMPT="$1: $PROMPT"
 }
@@ -542,8 +746,23 @@ function load_all_conf {
 }
 
 function init {
-	echo "${LOG_PREFIX}: init"
 	update_prefix "backup-init"
+	
+	while (( $# )); do
+		case $1 in
+			-h|--help)
+				help_init
+				exit 0
+				;;
+			*)
+				echo "${LOG_PREFIX}: error: \"$1\" is not a known option."  >&2
+				echo >&2
+				help_init >&2
+				exit 1
+		esac
+	done
+
+	echo "${PRIOR_PREFIX}: init"
 	
 	if $QUIET ; then
 		local wants_initial_backup='n'
@@ -571,8 +790,23 @@ function init {
 }
 
 function start {
-	echo "${LOG_PREFIX}: start"
 	update_prefix "backup-start"
+	
+	while (( $# )); do
+		case $1 in
+			-h|--help)
+				help_start
+				exit 0
+				;;
+			*)
+				echo "${LOG_PREFIX}: error: \"$1\" is not a known option."  >&2
+				echo >&2
+				help_start >&2
+				exit 1
+		esac
+	done
+	
+	echo "${PRIOR_PREFIX}: start"
 	
 	load_all_conf
 	
@@ -582,48 +816,124 @@ function start {
 }
 
 function schedule {
-	echo "${LOG_PREFIX}: schedule"
 	update_prefix "backup-schedule"
+	
+	while (( $# )); do
+		case $1 in
+			-h|--help)
+				help_schedule
+				exit 0
+				;;
+			*)
+				echo "${LOG_PREFIX}: error: \"$1\" is not a known option."  >&2
+				echo >&2
+				help_schedule >&2
+				exit 1
+		esac
+	done
 
 	if [ ! -z "$(show_cron_job)" ]; then
 		echo "${LOG_PREFIX}: error: backup job already exists."  >&2
 		exit 5
 	fi
 	
+	echo "${PRIOR_PREFIX}: schedule"
+	
 	add_cron_job
 }
 
 function show {
 	update_prefix "backup-show"
+	
+	while (( $# )); do
+		case $1 in
+			-h|--help)
+				help_show
+				exit 0
+				;;
+			*)
+				echo "${LOG_PREFIX}: error: \"$1\" is not a known option."  >&2
+				echo >&2
+				help_show >&2
+				exit 1
+		esac
+	done
+	
 	show_cron_job
 }
 
 function unschedule {
-	echo "${LOG_PREFIX}: unschedule"
 	update_prefix "backup-unschedule"
+	
+	while (( $# )); do
+		case $1 in
+			-h|--help)
+				help_unschedule
+				exit 0
+				;;
+			*)
+				echo "${LOG_PREFIX}: error: \"$1\" is not a known option."  >&2
+				echo >&2
+				help_unschedule >&2
+				exit 1
+		esac
+	done
 
 	if [ -z "$(show_cron_job)" ]; then
 		echo "${LOG_PREFIX}: error: backup job doesn't exist."  >&2
 		exit 5
 	fi
 	
+	echo "${PRIOR_PREFIX}: unschedule"
+	
 	rm_cron_job
 }
 
 function reschedule {
-	echo "${LOG_PREFIX}: reschedule"
 	update_prefix "backup-reschedule"
+	
+	while (( $# )); do
+		case $1 in
+			-h|--help)
+				help_reschedule
+				exit 0
+				;;
+			*)
+				echo "${LOG_PREFIX}: error: \"$1\" is not a known option."  >&2
+				echo >&2
+				help_reschedule >&2
+				exit 1
+		esac
+	done
 
 	if [ -z "$(show_cron_job)" ]; then
 		echo "${LOG_PREFIX}: error: backup job doesn't exist."  >&2
 		exit 5
 	fi
+	
+	echo "${PRIOR_PREFIX}: reschedule"
 	
 	rm_cron_job
 	add_cron_job
 }
 
 function snapshots {
+	update_prefix "backup-snapshots"
+	
+	while (( $# )); do
+		case $1 in
+			-h|--help)
+				help_snapshots
+				exit 0
+				;;
+			*)
+				echo "${LOG_PREFIX}: error: \"$1\" is not a known option."  >&2
+				echo >&2
+				help_snapshots >&2
+				exit 1
+		esac
+	done
+
 	load_all_conf
 	
 	restic_snapshots
@@ -632,12 +942,15 @@ function snapshots {
 #Add help page
 #Refactor yq e to yq
 function restore {
-	echo "${LOG_PREFIX}: restore"
 	update_prefix "backup-restore"
 
 	local snapshot=latest
 	while (( $# )); do
 		case $1 in
+			-h|--help)
+				help_restore
+				exit 0
+				;;
 			-s|--snapshot)
 				if [ ! -z $2 ]; then
 					local snapshot=$2
@@ -647,8 +960,15 @@ function restore {
 					exit 3
 				fi
 				;;
+			*)
+				echo "${LOG_PREFIX}: error: \"$1\" is not a known option."  >&2
+				echo >&2
+				help_restore >&2
+				exit 1
 		esac
 	done
+	
+	echo "${PRIOR_PREFIX}: restore"
 	
 	load_all_conf
 	
@@ -719,25 +1039,25 @@ update_prefix "backup"
 
 case $COMMAND in
 	init) 
-		init
+		init $@
 		;;
 	start)
-		start
+		start $@
 		;;
 	schedule)
-		schedule
+		schedule $@
 		;;
 	show)
-		show
+		show $@
 		;;
 	unschedule)
-		unschedule
+		unschedule $@
 		;;
 	reschedule)
-		reschedule
+		reschedule $@
 		;;
 	snapshots)
-		snapshots
+		snapshots $@
 		;;
 	restore)
 		restore $@

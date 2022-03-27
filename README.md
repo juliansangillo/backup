@@ -22,7 +22,7 @@ backup [-d] [-q] <command> [-h]
 backup [-c] [-e] [-v] [-h]
 ```
 - command : Operation to perform. Next section has details on the possible commands.
-- -d, --dry-run : Execute the command without making changes to the restic repository. Any commands that do make changes will not run and will simply be outputted instead. It will also output any variable exports except for password related variables. This is useful for troubleshooting as well as entering missing configuration and walking through the process without actually making changes.
+- -d, --dry-run : Execute the command without making changes to the restic repository or crontab. Any commands that do make changes will not run and will simply be outputted instead. It will also output any variable exports except for password related variables. This is useful for troubleshooting as well as entering missing configuration and walking through the process without actually making changes.
 - -q, --quiet : Execute the command in quiet mode. This will gaurentee that the user is not prompted for input during runtime. Any configuration that is missing or invalid will cause it to error out instead of prompting the user for information.
 - -c, --conf : Shows path to conf file if it exists.
 - -e, --edit : Open conf in editor to add or change file. Editor used is vim if installed or vi otherwise.
@@ -30,13 +30,13 @@ backup [-c] [-e] [-v] [-h]
 - -h, --help : Show help text. In case you forget how to use.
 
 ## Commands
-There are a number of operations that can be performed in relation to the backup which can be specified as the command. Most commands will get the data they need from the conf file if there is one. If no conf file exists or required fields are missing, then it will prompt you to input the missing data and will update the conf file accordingly, unless running in quiet mode. Alternatively, you can also run `backup -e` or `backup --edit` first and add all the necessary configuration manually.
+There are a number of operations that can be performed in relation to the backup which can be specified as the command. Most commands will get the data they need from the conf file if there is one. If no conf file exists or required fields are missing, then it will prompt you to input the missing data and will update the conf file accordingly, unless running in quiet mode. Alternatively, you can also run `backup --edit` first and add all the necessary configuration manually.
 
 ### Init
 ```bash
 backup [-d] [-q] init [-h]
 ```
-Initialize the google cloud storage (gs) repository (will be referred to as "the repository" from here on). This must be run first. After initializing the repository, it will also ask if you would want to schedule a regular backup and if you want to start the initial backup now.
+Initialize the google cloud storage (gs) repository (will be referred to as "the repository" from here on). This must be run first. It will also prompt you if you want to start the initial backup and if you want to schedule a regular backup. In quiet mode, you won't be prompted and the default 'no' response is used for both questions. In this case, the initial backup and scheduling a backup job will have to be done manually.
 
 ### Start
 ```bash
@@ -48,7 +48,7 @@ Starts a backup. The repository must be initialized first. Backed up data will b
 ```bash
 backup [-d] [-q] schedule [-h]
 ```
-This will add a cron job on your machine which will run `backup start` at a regular interval. It will also pipe the output to a custom command. This is useful in sending yourself the output logs by email or notification. The output command must support taking input from stdin. The cron time and output command can be specified in the conf. This will error if the cron job already exists.
+This will add a cron job on your machine which will run `backup -q start` at a regular interval. It can also pipe the output to a custom command. This is useful in sending yourself the output logs by email or notification. The output command must support taking input from stdin. The cron time and output command can be specified in the conf. This will error if the cron job already exists.
 
 ### Show
 ```bash
@@ -66,7 +66,7 @@ This will remove the cron job from your machine and will error if the cron job d
 ```bash
 backup [-d] [-q] reschedule [-h]
 ```
-This will update the cron job with the current configuration. Changing the cron time or output command will NOT update the cron job. The reschedule command will need to be run if you change the conf.
+This will update the cron job with the current configuration. Changing the cron time or output command in the conf file will NOT automattically update the cron job. The reschedule command will need to be run if you change the conf.
 
 ### Snapshots
 ```bash
@@ -80,7 +80,7 @@ backup [-d] [-q] restore [-s <snapshot-id>] [-h]
 ```
 - -s, --snapshot : The snapshot id to restore to. The default is latest.
 
-This will restore your system using one of the saved snapshots. Use `backup snapshots` to get the list of snapshot ids. If no snapshot id is provided, then the latest snapshot will be restored.
+This will restore your system using one of the saved snapshots. Use `backup snapshots` to get the list of snapshot ids.
 
 ## backup.conf
 The conf file is in yaml format and is placed at the path returned by `backup --conf`.
