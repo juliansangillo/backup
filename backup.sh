@@ -21,6 +21,62 @@ IFS=$'\n'
 
 PROMPT="Password for $USER: "
 
+function help {
+	local help_text="Usage: backup [-d] [-q] <command> [-h]
+Usage: backup [-c] [-e] [-v] [-h]
+
+Back up an entire linux system to google cloud storage.
+
+  command may be		init | start | schedule | show | unschedule | 
+				reschedule | snapshots | restore
+
+For detailed information on any command and its flags, run:
+  backup <command> --help
+  
+backup.conf:
+
+A yaml conf file is required by most commands. If no conf file exists or required fields 
+are missing, then it will prompt you to input the missing data and will update the 
+conf file accordingly, unless running in quiet mode. To manually create, run 
+'backup --edit'. Alternatively, you can run the init command in dry-run mode so 
+it only prompts you for the required configuration and won't actually make changes. 
+This can be done by running 'backup --dry-run init'.
+
+For detailed information on the conf file and its structure, please see:
+  https://github.com/juliansangillo/backup#backup.conf
+
+Global Flags:
+  -d, --dry-run			Execute the command without making changes to the restic 
+				repository. Any commands that do make changes will not run and will 
+				simply be outputted instead. It will also output any variable exports 
+				except for password related variables. This is useful for troubleshooting 
+				as well as entering missing configuration and walking through the 
+				process without actually making changes.
+				
+  -q, --quiet			Execute the command in quiet mode. This will gaurentee that 
+				the user is not prompted for input during runtime. Any 
+				configuration that is missing or invalid will cause it to error 
+				out instead of prompting the user for information.
+				
+  -c, --conf			Shows path to conf file if it exists.
+  
+  -e, --edit			Open conf in editor to add or change file. Editor used is vim if 
+				installed or vi otherwise.
+				
+  -v, --version			Show version info.
+  
+  -h, --help			Show this help text."
+
+	echo "$help_text"
+}
+
+function help_init {
+	local help_text="
+"
+	
+	echo "$help_text"
+}
+
 function update_prefix {
 	LOG_PREFIX="$1"
 	export SUDO_PROMPT="$1: $PROMPT"
@@ -628,6 +684,10 @@ DRY_RUN=false
 QUIET=false
 while (( $# )); do
 	case $1 in
+		-h|--help)
+			help
+			exit 0
+			;;
 		-v|--version)
 			echo "$VERSION_INFO"
 			exit 0
@@ -652,7 +712,6 @@ while (( $# )); do
 			COMMAND=$1
 			shift
 			break
-			;;
 	esac
 done
 
@@ -685,5 +744,7 @@ case $COMMAND in
 		;;
 	*)
 		echo "${LOG_PREFIX}: error: \"$COMMAND\" is not a known command."  >&2
+		echo >&2
+		help >&2
 		exit 1
 esac

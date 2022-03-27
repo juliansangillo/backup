@@ -10,7 +10,7 @@ Back up an entire linux system to google cloud storage.
     6. [Reschedule](#reschedule)
     7. [Snapshots](#snapshots)
     8. [Restore](#restore)
-3. [Conf Example](#conf-example)
+3. [backup.conf](#backup.conf)
 4. [Dependencies](#dependencies)
     1. [restic](#restic)
     2. [mikefarah yq](#mikefarah-yq)
@@ -18,11 +18,11 @@ Back up an entire linux system to google cloud storage.
 
 ## Usages
 ```bash
-backup [-d] [-q] <command>
+backup [-d] [-q] <command> [-h]
 backup [-c] [-e] [-v] [-h]
 ```
 - command : Operation to perform. Next section has details on the possible commands.
-- -d, --dry-run : Execute the command without making changes to the restic repository or the host. Any commands that do make changes will not run and will simply be outputted instead. It will also output any export VARIABLE=VALUE except for password related variables. This is useful for troubleshooting as well as entering missing configuration and walking through the process without actually making changes.
+- -d, --dry-run : Execute the command without making changes to the restic repository. Any commands that do make changes will not run and will simply be outputted instead. It will also output any variable exports except for password related variables. This is useful for troubleshooting as well as entering missing configuration and walking through the process without actually making changes.
 - -q, --quiet : Execute the command in quiet mode. This will gaurentee that the user is not prompted for input during runtime. Any configuration that is missing or invalid will cause it to error out instead of prompting the user for information.
 - -c, --conf : Shows path to conf file if it exists.
 - -e, --edit : Open conf in editor to add or change file. Editor used is vim if installed or vi otherwise.
@@ -30,60 +30,60 @@ backup [-c] [-e] [-v] [-h]
 - -h, --help : Show help text. In case you forget how to use.
 
 ## Commands
-There are a number of operations that can be performed in relation to the backup which can be specified as the command. Most commands will get the data they need from the conf file if there is one. If no conf file exists or required fields are missing, then it will prompt you to input the missing data and will update the conf file accordingly. Alternatively, you can also run `backup -e` or `backup --edit` first and add all the necessary configuration manually.
+There are a number of operations that can be performed in relation to the backup which can be specified as the command. Most commands will get the data they need from the conf file if there is one. If no conf file exists or required fields are missing, then it will prompt you to input the missing data and will update the conf file accordingly, unless running in quiet mode. Alternatively, you can also run `backup -e` or `backup --edit` first and add all the necessary configuration manually.
 
 ### Init
 ```bash
-backup [-d] [-q] init
+backup [-d] [-q] init [-h]
 ```
 Initialize the google cloud storage (gs) repository (will be referred to as "the repository" from here on). This must be run first. After initializing the repository, it will also ask if you would want to schedule a regular backup and if you want to start the initial backup now.
 
 ### Start
 ```bash
-backup [-d] [-q] start
+backup [-d] [-q] start [-h]
 ```
 Starts a backup. The repository must be initialized first. Backed up data will be encrypted using the repository password provided in the conf. Also provided in the conf is a list of files and directories to include and a list of regex patterns to exclude. This combination is used to determine what should be backed up. Backups are also incremental, so it won't re-upload duplicate data in the repository and each subsequent backup won't take as much time. At the end of the backup, it will also forget old backups and delete data from the repository that isn't used anymore in order to reduce consumed memory and cost.
 
 ### Schedule
 ```bash
-backup [-d] [-q] schedule
+backup [-d] [-q] schedule [-h]
 ```
 This will add a cron job on your machine which will run `backup start` at a regular interval. It will also pipe the output to a custom command. This is useful in sending yourself the output logs by email or notification. The output command must support taking input from stdin. The cron time and output command can be specified in the conf. This will error if the cron job already exists.
 
 ### Show
 ```bash
-backup [-d] [-q] show
+backup [-d] [-q] show [-h]
 ```
-The show command will output the backup cron job if it exists. If it doesn't exist, then nothing will be outputted and a non-zero exit code is returned. Unaffected by -d or -q.
+The show command will output the backup cron job if it exists. If it doesn't exist, then nothing will be outputted and a non-zero exit code is returned. Unaffected by --dry-run or --quiet.
 
 ### Unschedule
 ```bash
-backup [-d] [-q] unschedule
+backup [-d] [-q] unschedule [-h]
 ```
 This will remove the cron job from your machine and will error if the cron job doesn't exist.
 
 ### Reschedule
 ```bash
-backup [-d] [-q] reschedule
+backup [-d] [-q] reschedule [-h]
 ```
 This will update the cron job with the current configuration. Changing the cron time or output command will NOT update the cron job. The reschedule command will need to be run if you change the conf.
 
 ### Snapshots
 ```bash
-backup [-d] [-q] snapshots
+backup [-d] [-q] snapshots [-h]
 ```
-The snapshots command will output the list of saved snapshots. Unaffected by -d or -q.
+The snapshots command will output the list of saved snapshots. Unaffected by --dry-run or --quiet.
 
 ### Restore
 ```bash
-backup [-d] [-q] restore [-s <snapshot-id>]
+backup [-d] [-q] restore [-s <snapshot-id>] [-h]
 ```
 - -s, --snapshot : The snapshot id to restore to. The default is latest.
 
 This will restore your system using one of the saved snapshots. Use `backup snapshots` to get the list of snapshot ids. If no snapshot id is provided, then the latest snapshot will be restored.
 
-## Conf Example
-The conf file is in yaml format and is placed at the path returned by `backup -c`.
+## backup.conf
+The conf file is in yaml format and is placed at the path returned by `backup --conf`.
 ```yaml
 backup:
     keep: 10    #How many backups to keep in the repository. Any old backups that exceed this amount will be deleted. Enter '*' here to keep all backups.
@@ -94,7 +94,7 @@ backup:
     restic:
         repository: gs:my-google-backup-bucket:/    #Google storage bucket and restic repository. Must start with gs, then have the bucket name, and then end with the directory path each separated by colons.
         password: my_random_password    #Password choosen by you to encrypt the files with. A randomized and secure password is recommended here.
-    includes:    #List of files and directories to include in the backup. Default is /. Separate filesystems and partitions must be specified here to be backed as well.
+    includes:    #Optional. List of files and directories to include in the backup. Default is /. Separate filesystems and partitions must be specified here to be backed as well.
         - /
         - /home
     excludes:    #Optional. List of paths to exclude from the backup. Regex is supported here. Any file or directory path that is a match will not be backed up.
@@ -109,7 +109,8 @@ backup:
         cron: 0 2 * * *    #Cron string. The backup will run on a regular schedule at this time.
         output-cmd: mail -s "Hello World" someone@example.com    #Optional. Bash command to pipe the output of the backup to. Useful for notifications.
 ```
-NOTE: This is only an example and you are expected to change it to meet your requirements. Fields that are optional are marked as optional. Inclusions have to be there, even if the only included directory is root. This tool will only backup the current filesystem. If there are mounted filesystems or separate partitions that you want to backup as well, then they have to be listed separately. For example, if home and usr are separate partitions here, then everything in root that is on the same filesystem and /home is backed up, but /usr isn't backed up because it is not included.
+To manually create, run `backup --edit`. Alternatively, you can run the init command in dry-run mode so it only prompts you for the required configuration and won't actually make changes. This can be done by running `backup --dry-run init`.  
+NOTE: This is only an example and you are expected to change it to meet your requirements. Fields that are optional are marked as optional. This tool will only backup the current filesystem. If there are mounted filesystems or separate partitions that you want to backup as well, then they have to be listed separately. For example, if home and usr are separate partitions here, then everything in root that is on the same filesystem and /home is backed up, but /usr isn't backed up because it is not included.
 
 ## Dependencies
 These must be installed before using this tool.
