@@ -43,7 +43,7 @@ it only prompts you for the required configuration and won't actually make chang
 This can be done by running 'backup --dry-run init'.
 
 For detailed information on the conf file and its structure, please see:
-  https://github.com/juliansangillo/backup#backup.conf
+  https://github.com/juliansangillo/backup#backupconf
 
 Global Flags:
   -d, --dry-run			Execute the command without making changes to the restic 

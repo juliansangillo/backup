@@ -10,7 +10,7 @@ Back up an entire linux system to google cloud storage.
     6. [Reschedule](#reschedule)
     7. [Snapshots](#snapshots)
     8. [Restore](#restore)
-3. [backup.conf](#backup.conf)
+3. [backup.conf](#backupconf)
 4. [Dependencies](#dependencies)
     1. [restic](#restic)
     2. [mikefarah yq](#mikefarah-yq)
