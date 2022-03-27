@@ -291,7 +291,7 @@ function update_prefix {
 
 function run {
 	if $DRY_RUN ; then
-		echo + $@
+		echo + "$@"
 	else
 		$@
 	fi
