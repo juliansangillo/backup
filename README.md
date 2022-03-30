@@ -23,7 +23,7 @@ backup [-c] [-e] [-v] [-h]
 ```
 - command : Operation to perform. Next section has details on the possible commands.
 - -d, --dry-run : Execute the command without making changes to the restic repository or crontab. Any commands that do make changes will not run and will simply be outputted instead. It will also output any variable exports except for password related variables. This is useful for troubleshooting as well as entering missing configuration and walking through the process without actually making changes.
-- -q, --quiet : Execute the command in quiet mode. This will gaurentee that the user is not prompted for input during runtime. Any configuration that is missing or invalid will cause it to error out instead of prompting the user for information.
+- -q, --quiet : Execute the command in quiet mode. This will gaurentee that the user is not prompted for input during runtime. Any configuration that is missing or invalid will cause it to error out instead of prompting the user for information. NOTE: This can't be run as a normal user in quiet mode due to interactive password prompts. If running in quiet mode, this must be run with sudo.
 - -c, --conf : Shows path to conf file if it exists.
 - -e, --edit : Open conf in editor to add or change file. Editor used is vim if installed or vi otherwise.
 - -v, --version : Show version info.

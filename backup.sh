@@ -63,7 +63,7 @@ Global Flags:
 			that the user is not prompted for input during runtime. 
 			Any configuration that is missing or invalid will cause 
 			it to error out instead of prompting the user for 
-			information.
+			information. Must be run as root.
 				
   -c, --conf		Shows path to conf file if it exists.
   
@@ -103,7 +103,7 @@ Global Flags:
 			that the user is not prompted for input during runtime. 
 			Any configuration that is missing or invalid will cause 
 			it to error out instead of prompting the user for 
-			information."
+			information.  Must be run as root."
 	
 	echo "$help_text"
 }
@@ -137,7 +137,7 @@ Global Flags:
 			that the user is not prompted for input during runtime. 
 			Any configuration that is missing or invalid will cause 
 			it to error out instead of prompting the user for 
-			information."
+			information.  Must be run as root."
 	
 	echo "$help_text"
 }
@@ -168,7 +168,7 @@ Global Flags:
 			that the user is not prompted for input during runtime. 
 			Any configuration that is missing or invalid will cause 
 			it to error out instead of prompting the user for 
-			information."
+			information.  Must be run as root."
 	
 	echo "$help_text"
 }
@@ -209,7 +209,7 @@ Global Flags:
 			that the user is not prompted for input during runtime. 
 			Any configuration that is missing or invalid will cause 
 			it to error out instead of prompting the user for 
-			information."
+			information.  Must be run as root."
 
 	echo "$help_text"
 }
@@ -238,7 +238,7 @@ Global Flags:
 			that the user is not prompted for input during runtime. 
 			Any configuration that is missing or invalid will cause 
 			it to error out instead of prompting the user for 
-			information."
+			information.  Must be run as root."
 	
 	echo "$help_text"
 }
@@ -278,7 +278,7 @@ Global Flags:
 			that the user is not prompted for input during runtime. 
 			Any configuration that is missing or invalid will cause 
 			it to error out instead of prompting the user for 
-			information."
+			information.  Must be run as root."
 	
 	echo "$help_text"
 }
@@ -386,7 +386,7 @@ function restic_backup {
 function restic_prune {
 	if [ "$KEEP_LAST" != "*" ]; then
 		echo "${LOG_PREFIX}: Pruning old backups..."
-		run restic -v forget \
+		run sudo -E restic -v forget \
 			--prune \
 			--keep-last $KEEP_LAST 
 		echo "${LOG_PREFIX}: prune done."
@@ -395,12 +395,12 @@ function restic_prune {
 
 function restic_check {
 	echo "${LOG_PREFIX}: Checking repository health..."
-	run restic -v check 
+	run sudo -E restic -v check
 	echo "${LOG_PREFIX}: all green."
 }
 
 function restic_snapshots {
-	restic -v snapshots 
+	sudo -E restic -v snapshots
 }
 
 function restic_restore {
@@ -1037,6 +1037,11 @@ while (( $# )); do
 done
 
 update_prefix "backup"
+
+if $QUIET && [ "$EUID" -ne 0 ]; then
+	echo "${LOG_PREFIX}: error: Can not run as normal user in quiet mode. If running in quiet mode, please re-run with sudo." >&2
+	exit 1
+fi
 
 case $COMMAND in
 	init) 
