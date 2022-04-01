@@ -15,7 +15,7 @@ Back up an entire linux system to google cloud storage.
     1. [restic](#restic)
     2. [mikefarah yq](#mikefarah-yq)
 	3. [fcron](#fcron)
-5. [Install](#install)
+5. [Installation](#installation)
 
 ## Usages
 ```bash
