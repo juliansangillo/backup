@@ -134,10 +134,14 @@ sudo ./install-man-page.sh && \
     sudo rm yq.1
 ```
 
-## Install
-To install, please install the dependencies above, then run the command below:
+## Installation
+To install, please install the dependencies above, then run the commands below:
 ```bash
-sudo wget https://github.com/juliansangillo/backup/releases/download/${VERSION}/backup.sh \
+version=<version-to-install>
+```
+```bash
+sudo wget https://github.com/juliansangillo/backup/releases/download/v${version}/backup.sh \
     && sudo chmod +x backup.sh \
     && sudo mv backup.sh /bin/backup
 ```
+All versions are available on the releases page. You can also check the version you currently have on your machine by running `backup -v`.
