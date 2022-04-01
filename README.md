@@ -125,13 +125,26 @@ sudo apt install restic
 Used for yaml parsing with the conf file. For more information and the published versions, please see the yq github [here](https://github.com/mikefarah/yq).
 ```bash
 sudo wget \
-    https://github.com/mikefarah/yq/releases/download/${VERSION}/yq_linux_amd64.tar.gz -O - |\
+    https://github.com/mikefarah/yq/releases/download/v${version}/yq_linux_amd64.tar.gz -O - |\
     sudo tar xz && sudo mv yq_linux_amd64 /usr/bin/yq
 ```
 ```bash
 sudo ./install-man-page.sh && \
     sudo rm install-man-page.sh && \
     sudo rm yq.1
+```
+
+### fcron
+Used for cron scheduling. For more information, please see the fcron home page [here](http://fcron.free.fr).
+```bash
+sudo wget \
+    http://fcron.free.fr/archives/fcron-${version}.src.tar.gz -O - |\
+    sudo tar x && cd fcron-${version}
+```
+```bash
+./configure &&
+    make &&
+    sudo make install
 ```
 
 ## Installation

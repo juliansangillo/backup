@@ -3,7 +3,7 @@
 set -eo pipefail
 set -o noglob
 
-VERSION=1.0
+VERSION=1.1
 VERSION_INFO="backup version $VERSION"
 
 CONF_FILE=/etc/backup.conf
@@ -51,7 +51,7 @@ For detailed information on the conf file and its structure, please see:
 
 Global Flags:
   -d, --dry-run		Execute the command without making changes to the restic 
-			repository or crontab. Any commands that do make changes 
+			repository or fcrontab. Any commands that do make changes
 			will not run and will simply be outputted instead. It 
 			will also output any variable exports except for 
 			password related variables. This is useful for 
@@ -91,7 +91,7 @@ Options:
   
 Global Flags:
   -d, --dry-run		Execute the command without making changes to the restic 
-			repository or crontab. Any commands that do make changes 
+			repository or fcrontab. Any commands that do make changes
 			will not run and will simply be outputted instead. It 
 			will also output any variable exports except for 
 			password related variables. This is useful for 
@@ -125,7 +125,7 @@ Options:
   
 Global Flags:
   -d, --dry-run		Execute the command without making changes to the restic 
-			repository or crontab. Any commands that do make changes 
+			repository or fcrontab. Any commands that do make changes
 			will not run and will simply be outputted instead. It 
 			will also output any variable exports except for 
 			password related variables. This is useful for 
@@ -156,7 +156,7 @@ Options:
   
 Global Flags:
   -d, --dry-run		Execute the command without making changes to the restic 
-			repository or crontab. Any commands that do make changes 
+			repository or fcrontab. Any commands that do make changes
 			will not run and will simply be outputted instead. It 
 			will also output any variable exports except for 
 			password related variables. This is useful for 
@@ -197,7 +197,7 @@ Options:
   
 Global Flags:
   -d, --dry-run		Execute the command without making changes to the restic 
-			repository or crontab. Any commands that do make changes 
+			repository or fcrontab. Any commands that do make changes
 			will not run and will simply be outputted instead. It 
 			will also output any variable exports except for 
 			password related variables. This is useful for 
@@ -226,7 +226,7 @@ Options:
   
 Global Flags:
   -d, --dry-run		Execute the command without making changes to the restic 
-			repository or crontab. Any commands that do make changes 
+			repository or fcrontab. Any commands that do make changes
 			will not run and will simply be outputted instead. It 
 			will also output any variable exports except for 
 			password related variables. This is useful for 
@@ -266,7 +266,7 @@ Options:
   
 Global Flags:
   -d, --dry-run		Execute the command without making changes to the restic 
-			repository or crontab. Any commands that do make changes 
+			repository or fcrontab. Any commands that do make changes
 			will not run and will simply be outputted instead. It 
 			will also output any variable exports except for 
 			password related variables. This is useful for 
@@ -465,29 +465,29 @@ function add_cron_job {
 	fi
 	
 	if $DRY_RUN ; then
-		run sudo crontab -l 2> /dev/null
+		run sudo fcrontab -l 2> /dev/null
 		run echo "$cron_str"
-		run sudo crontab -
+		run sudo fcrontab -
 	else
-		(sudo crontab -l 2> /dev/null ; echo "$cron_str") | sudo crontab - 
+		(sudo fcrontab -l 2> /dev/null ; echo "$cron_str") | sudo fcrontab -
 	fi
 	
 	echo "${LOG_PREFIX}: done."
 }
 
 function show_cron_job {
-	sudo crontab -l 2> /dev/null | grep "$CRON_CMD"
+	sudo fcrontab -l 2> /dev/null | { grep "$CRON_CMD" || true; }
 }
 
 function rm_cron_job {
 	echo "${LOG_PREFIX}: Removing cron job..."
 	
 	if $DRY_RUN ; then
-		run sudo crontab -l 2> /dev/null
+		run sudo fcrontab -l 2> /dev/null
 		run grep -v "$CRON_CMD"
-		run sudo crontab -
+		run sudo fcrontab -
 	else
-		sudo crontab -l 2> /dev/null | grep -v "$CRON_CMD" | sudo crontab - 
+		sudo fcrontab -l 2> /dev/null | { grep -v "$CRON_CMD" || true; } | sudo fcrontab -
 	fi
 	
 	echo "${LOG_PREFIX}: done."
